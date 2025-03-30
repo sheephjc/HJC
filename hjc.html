@@ -1,1 +1,439 @@
-<p>helloworld</p>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>高精度质谱分子式计算器</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #3498db;
+            --background: #f8f9fa;
+            --card-bg: #ffffff;
+            --green: #27ae60;
+            --purple: #9b59b6;
+            --orange: #e67e22;
+            --red: #e74c3c;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui;
+            background: var(--background);
+            padding: 2rem;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .input-card {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            margin-bottom: 2rem;
+            position: sticky;
+            top: 20px;
+            z-index: 100;
+        }
+
+        h1 {
+            color: var(--primary);
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        h1::before {
+            content: '🧪';
+            font-size: 1.2em;
+        }
+
+        .input-group {
+            display: grid;
+            gap: 1rem;
+        }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+        }
+
+        input[type="number"]:focus {
+            border-color: var(--secondary);
+            box-shadow: 0 0 0 3px rgba(52,152,219,0.2);
+            outline: none;
+        }
+
+        button {
+            background: var(--secondary);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(52,152,219,0.3);
+        }
+
+        .history-section {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .result-card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            padding: 1.5rem;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #eee;
+        }
+
+        .mass-display {
+            color: var(--primary);
+            font-size: 1.2rem;
+        }
+
+        .category-tag {
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .category-CHO { background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%); color: white; }
+        .category-N { background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); color: white; }
+        .category-SP { background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%); color: white; }
+        .category-halogen { background: linear-gradient(135deg, #e67e22 0%, #d35400 100%); color: white; }
+        .category-other { background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%); color: white; }
+
+        .formula-row {
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            gap: 1.5rem;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            background: rgba(245,245,245,0.5);
+            border-radius: 10px;
+            transition: transform 0.2s;
+        }
+
+        .formula-row:hover {
+            transform: translateX(5px);
+        }
+
+        .formula {
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: var(--primary);
+        }
+
+        .details {
+            display: grid;
+            gap: 0.3rem;
+        }
+
+        .theory-mass {
+            color: #7f8c8d;
+            font-size: 0.95rem;
+        }
+
+        .error {
+            font-size: 0.95rem;
+        }
+
+        .error.positive { color: var(--red); }
+        .error.negative { color: var(--green); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="input-card">
+            <h1>质谱分子式计算器</h1>
+            <div class="input-group">
+                <input type="number" id="massInput" step="any" placeholder="输入分子量（例如：180.0634）">
+                <button onclick="handleCalculate()">
+                    <span>🚀 开始计算</span>
+                </button>
+            </div>
+        </div>
+        <div id="results" class="history-section"></div>
+    </div>
+
+<script>
+const elements = [
+    { symbol: 'C', mass: 12.000000 },
+    { symbol: 'H', mass: 1.007825 },
+    { symbol: 'O', mass: 15.994915 },
+    { symbol: 'N', mass: 14.003074 },
+    { symbol: 'S', mass: 31.972071 },
+    { symbol: 'P', mass: 30.973762 },
+    { symbol: 'F', mass: 18.998403 },
+    { symbol: 'Cl', mass: 34.968853 },
+    { symbol: 'Br', mass: 78.918337 },
+    { symbol: 'I', mass: 126.904473 }
+];
+
+class FormulaCalculator {
+    constructor() {
+        this.stack = [];
+        this.results = new Map();
+    }
+
+    initialize(target, tolerance = 0.002) {
+        this.target = target;
+        this.tolerance = tolerance;
+        this.stack = [{ index: 0, counts: new Array(elements.length).fill(0), mass: 0 }];
+        this.results.clear();
+    }
+
+    calculate() {
+        while (this.stack.length > 0) {
+            const { index, counts, mass } = this.stack.pop();
+            
+            if (index === elements.length) {
+                if (this.isValid(counts)) {
+                    const formula = this.getFormula(counts);
+                    const error = Number((mass - this.target).toFixed(6));
+                    if (Math.abs(error) <= this.tolerance) {
+                        const category = this.classify(counts);
+                        if (!this.results.has(category)) {
+                            this.results.set(category, []);
+                        }
+                        this.results.get(category).push({
+                            formula,
+                            mass: Number(mass.toFixed(5)),
+                            error,
+                            ppm: Number((error / this.target * 1e6).toFixed(2))
+                        });
+                    }
+                }
+                continue;
+            }
+
+            const elem = elements[index];
+            const maxCount = Math.min(
+                Math.floor((this.target + this.tolerance - mass) / elem.mass),
+                30 // 性能优化：限制最大原子数
+            );
+
+            for (let n = maxCount; n >= 0; n--) {
+                const newMass = mass + n * elem.mass;
+                if (newMass > this.target + this.tolerance) continue;
+
+                const newCounts = [...counts];
+                newCounts[index] = n;
+                this.stack.push({
+                    index: index + 1,
+                    counts: newCounts,
+                    mass: newMass
+                });
+            }
+        }
+        return this.formatResults();
+    }
+
+    isValid(counts) {
+        const c = counts[0]; // C
+        const h = counts[1]; // H
+        if (c < 1 || h < 2) return false;
+
+        // 氢数验证
+        const o = counts[2];
+        const n = counts[3];
+        const s = counts[4];
+        const p = counts[5];
+        const maxH = 2 * c + 2 + 2 * (n + s + p) - 2 * o;
+        return h <= maxH;
+    }
+
+    getFormula(counts) {
+        let formula = '';
+        elements.forEach((elem, index) => {
+            const count = counts[index];
+            if (count > 0) {
+                formula += elem.symbol + (count > 1 ? count : '');
+            }
+        });
+        return formula;
+    }
+
+    classify(counts) {
+        const presentElements = elements.filter((_, i) => counts[i] > 0).map(e => e.symbol);
+        const elemSet = new Set(presentElements);
+
+        // 定义分类规则
+        const categories = [
+            {
+                name: '卤素化合物',
+                required: ['F','Cl','Br','I'],
+                allowed: ['C','H','O','F','Cl','Br','I']
+            },
+            {
+                name: '含硫/磷化合物',
+                required: ['S','P'],
+                allowed: ['C','H','O','S','P']
+            },
+            {
+                name: '含氮化合物',
+                required: ['N'],
+                allowed: ['C','H','O','N']
+            },
+            {
+                name: 'CHO化合物',
+                required: [],
+                allowed: ['C','H','O']
+            }
+        ];
+
+        for (const cat of categories) {
+            // 检查必须包含的元素
+            const hasRequired = cat.required.every(e => elemSet.has(e));
+            if (!hasRequired) continue;
+
+            // 检查是否仅包含允许元素
+            const allAllowed = presentElements.every(e => cat.allowed.includes(e));
+            if (allAllowed) return cat.name;
+        }
+
+        return '其他化合物';
+    }
+
+    formatResults() {
+        const sortedCategories = [
+            'CHO化合物',
+            '含氮化合物',
+            '含硫/磷化合物', 
+            '卤素化合物',
+            '其他化合物'
+        ].filter(cat => this.results.has(cat));
+
+        sortedCategories.forEach(cat => {
+            this.results.get(cat).sort((a, b) => Math.abs(a.error) - Math.abs(b.error));
+        });
+
+        return sortedCategories.map(cat => [cat, this.results.get(cat)]);
+    }
+}
+
+function handleCalculate() {
+    const input = document.getElementById('massInput');
+    const target = parseFloat(input.value);
+    if (isNaN(target)) {
+        alert('请输入有效数字');
+        return;
+    }
+
+    const calculator = new FormulaCalculator();
+    calculator.initialize(target);
+    const results = calculator.calculate();
+
+    displayResults(target, results);
+    input.value = target.toFixed(5); // 格式化输入
+}
+
+function displayResults(target, results) {
+    const container = document.getElementById('results');
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    
+    // Header
+    const header = document.createElement('div');
+    header.className = 'result-header';
+    header.innerHTML = `
+        <div class="mass-display">
+            🔬 目标质量：<strong>${target.toFixed(5)} Da</strong>
+        </div>
+        <div class="theory-mass" style="color: #95a5a6;">
+            ${new Date().toLocaleString()}
+        </div>
+    `;
+    
+    // Content
+    const content = document.createElement('div');
+    results.forEach(([category, items]) => {
+        const categoryDiv = document.createElement('div');
+        categoryDiv.innerHTML = `
+            <div class="${getCategoryClass(category)} category-tag">
+                ${category}
+            </div>
+        `;
+
+        items.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'formula-row';
+            row.innerHTML = `
+                <div class="formula">${item.formula}</div>
+                <div class="details">
+                    <div class="theory-mass">理论：${item.mass.toFixed(5)} Da</div>
+                    <div class="error ${item.error >= 0 ? 'positive' : 'negative'}">
+                        ${item.error >= 0 ? '+' : ''}${item.error.toFixed(5)} Da 
+                        (${item.ppm} ppm)
+                    </div>
+                </div>
+            `;
+            categoryDiv.appendChild(row);
+        });
+        content.appendChild(categoryDiv);
+    });
+
+    card.appendChild(header);
+    card.appendChild(content);
+    container.prepend(card);
+
+    // 保持最多3条记录
+    while (container.children.length > 3) {
+        container.removeChild(container.lastChild);
+    }
+}
+
+function getCategoryClass(category) {
+    const map = {
+        'CHO化合物': 'category-CHO',
+        '含氮化合物': 'category-N',
+        '含硫/磷化合物': 'category-SP',
+        '卤素化合物': 'category-halogen',
+        '其他化合物': 'category-other'
+    };
+    return map[category] || 'category-other';
+}
+</script>
+</body>
+</html>
