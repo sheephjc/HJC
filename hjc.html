@@ -149,7 +149,7 @@
         <div class="input-card">
             <h1>高分辨质谱仪分子式计算器</h1>
             <div class="input-group">
-                <input type="number" id="massInput" step="any" placeholder="输入分子量（例如：180.0634）">
+                <input type="number" id="massInput" step="any" placeholder="输入分子量（例如：180.0634）" onkeydown="handleKeyDown(event)">
                 <button onclick="handleCalculate()">🚀 开始计算</button>
             </div>
         </div>
@@ -170,6 +170,18 @@ const elements = [
     { symbol: 'O', mass: 15.994915 }
 ];
 
+// 最小分子量（甲烷）
+const MIN_MASS = 16.0313;
+// 实际计算上限
+const MAX_MASS = 300;
+
+// 处理键盘事件
+function handleKeyDown(event) {
+    if (event.key === 'Enter') {
+        handleCalculate();
+    }
+}
+
 class FormulaCalculator {
     constructor() {
         this.stack = [];
@@ -184,6 +196,11 @@ class FormulaCalculator {
     }
 
     calculate() {
+        // 如果目标分子量超过上限，直接返回空结果
+        if (this.target > MAX_MASS) {
+            return [];
+        }
+
         while (this.stack.length > 0) {
             const { index, counts, mass } = this.stack.pop();
             
@@ -252,8 +269,12 @@ class FormulaCalculator {
         const present = elements.filter((_, i) => counts[i] > 0).map(e => e.symbol);
         const elemSet = new Set(present);
 
-        // 分类优先级：卤素 > S/P > N > CHO > 其他
+        // 分类优先级：CHO > 卤素 > S/P > N > 其他
         const categories = [
+            {
+                name: 'CHO化合物',
+                check: () => [...elemSet].every(e => ['C','H','O'].includes(e))
+            },
             {
                 name: '卤素化合物',
                 check: () => ['F','Cl','Br','I'].some(e => elemSet.has(e)) &&
@@ -268,10 +289,6 @@ class FormulaCalculator {
                 name: '含氮化合物',
                 check: () => elemSet.has('N') &&
                     [...elemSet].every(e => ['C','H','O','N'].includes(e))
-            },
-            {
-                name: 'CHO化合物',
-                check: () => [...elemSet].every(e => ['C','H','O'].includes(e))
             }
         ];
 
@@ -282,7 +299,7 @@ class FormulaCalculator {
     }
 
     formatResults() {
-        const order = ['卤素化合物', '硫/磷化合物', '含氮化合物', 'CHO化合物', '其他化合物'];
+        const order = ['CHO化合物', '卤素化合物', '硫/磷化合物', '含氮化合物', '其他化合物'];
         return order
             .filter(cat => this.results.has(cat))
             .map(cat => [cat, this.results.get(cat).sort((a, b) => Math.abs(a.error) - Math.abs(b.error))]);
@@ -292,8 +309,20 @@ class FormulaCalculator {
 function handleCalculate() {
     const input = document.getElementById('massInput');
     const target = parseFloat(input.value);
+    
     if (isNaN(target)) {
         alert('请输入有效数值');
+        return;
+    }
+
+    // 检查分子量范围
+    if (target < MIN_MASS) {
+        alert(`分子量过小！最小支持 ${MIN_MASS.toFixed(4)} Da（甲烷）`);
+        return;
+    }
+    
+    if (target > MAX_MASS) {
+        alert(`分子量过大！最大支持 ${MAX_MASS} Da`);
         return;
     }
 
@@ -303,6 +332,9 @@ function handleCalculate() {
 
     displayResults(target, results);
     input.value = target.toFixed(5);
+    
+    // 计算完成后滚动到顶部
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function displayResults(target, results) {
@@ -317,29 +349,35 @@ function displayResults(target, results) {
         </div>
     `;
 
-    results.forEach(([category, items]) => {
-        const section = document.createElement('div');
-        section.innerHTML = `
-            <div class="${getCategoryClass(category)} category-tag">${category}</div>
-        `;
-
-        items.forEach(item => {
-            const row = document.createElement('div');
-            row.className = 'formula-row';
-            row.innerHTML = `
-                <div class="formula">${item.formula}</div>
-                <div>
-                    <div>理论值：${item.mass.toFixed(5)} Da</div>
-                    <div class="error ${item.error >= 0 ? 'positive' : 'negative'}">
-                        ${item.error >= 0 ? '+' : ''}${item.error.toFixed(5)} Da (${item.ppm} ppm)
-                    </div>
-                </div>
+    if (results.length === 0) {
+        const noResults = document.createElement('div');
+        noResults.textContent = '没有找到符合条件的分子式';
+        card.appendChild(noResults);
+    } else {
+        results.forEach(([category, items]) => {
+            const section = document.createElement('div');
+            section.innerHTML = `
+                <div class="${getCategoryClass(category)} category-tag">${category}</div>
             `;
-            section.appendChild(row);
-        });
 
-        card.appendChild(section);
-    });
+            items.forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'formula-row';
+                row.innerHTML = `
+                    <div class="formula">${item.formula}</div>
+                    <div>
+                        <div>理论值：${item.mass.toFixed(5)} Da</div>
+                        <div class="error ${item.error >= 0 ? 'positive' : 'negative'}">
+                            ${item.error >= 0 ? '+' : ''}${item.error.toFixed(5)} Da (${item.ppm} ppm)
+                        </div>
+                    </div>
+                `;
+                section.appendChild(row);
+            });
+
+            card.appendChild(section);
+        });
+    }
 
     container.prepend(card);
     while (container.children.length > 3) container.lastChild.remove();
