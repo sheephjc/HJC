@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>高分辨质谱仪分子式计算器</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #3498db;
+            --background: #f8f9fa;
+            --card-bg: #ffffff;
+            --green: #27ae60;
+            --purple: #9b59b6;
+            --orange: #e67e22;
+            --red: #e74c3c;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui;
+            background: var(--background);
+            padding: 2rem;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .input-card {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            margin-bottom: 2rem;
+            position: sticky;
+            top: 20px;
+            z-index: 100;
+        }
+
+        h1 {
+            color: var(--primary);
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        h1::before {
+            content: '🧪';
+            font-size: 1.2em;
+        }
+
+        .input-group {
+            display: grid;
+            gap: 1rem;
+        }
+
+        input[type="number"], input[type="text"] {
+            width: 100%;
+            padding: 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+        }
+
+        button {
+            background: var(--secondary);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .history-section {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .result-card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            padding: 1.5rem;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #eee;
+        }
+
+        .category-tag {
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 1rem;
+        }
+
+        .halogen { background: linear-gradient(135deg, #e67e22 0%, #d35400 100%); color: white; }
+        .sulfur-phosphor { background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%); color: white; }
+        .nitrogen { background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); color: white; }
+        .cho { background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%); color: white; }
+        .other { background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%); color: white; }
+
+        .formula-row {
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            gap: 1.5rem;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            background: rgba(245,245,245,0.5);
+            border-radius: 10px;
+        }
+
+        .formula {
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .error.positive { color: var(--red); }
+        .error.negative { color: var(--green); }
+
+        /* 新增制作人信息样式 */
+        .credits {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            color: var(--primary);
+            font-size: 0.9em;
+            opacity: 0.7;
+            font-family: 'Courier New', monospace;
+            padding: 8px 15px;
+            background: rgba(255,255,255,0.9);
+            border-radius: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: opacity 0.3s ease;
+        }
+
+        .credits:hover {
+            opacity: 1;
+        }
+
+        .advanced-options {
+            display: grid;
+            gap: 1rem;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px dashed #e0e0e0;
+        }
+
+        .option-label {
+            font-size: 0.95rem;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="input-card">
+            <h1>高分辨质谱仪分子式计算器</h1>
+            <div class="input-group">
+                <input type="number" id="massInput" step="any" placeholder="输入分子量（例如：180.0634）" onkeydown="handleKeyDown(event)">
+                <button onclick="handleCalculate()">🚀 开始计算</button>
+            </div>
+            
+            <div class="advanced-options">
+                <div>
+                    <div class="option-label">杂原子总数限制（可选，不包括氧）</div>
+                    <input type="number" id="heteroAtomCount" min="0" placeholder="例如：3">
+                </div>
+                <div>
+                    <div class="option-label">杂原子种类限制（可选，不包括氧，用空格分隔）</div>
+                    <input type="text" id="heteroAtomTypes" placeholder="例如：氮 硫 氯">
+                </div>
+            </div>
+        </div>
+        <div id="results" class="history-section"></div>
+    </div>
+    
+    <div class="credits">BUCT-HJC</div>
+
+<script>
+const elements = [
+    { symbol: 'C', mass: 12.000000, name: '碳' },
+    { symbol: 'H', mass: 1.007825, name: '氢' },
+    { symbol: 'N', mass: 14.003074, name: '氮' },
+    { symbol: 'S', mass: 31.972071, name: '硫' },
+    { symbol: 'P', mass: 30.973762, name: '磷' },
+    { symbol: 'F', mass: 18.998403, name: '氟' },
+    { symbol: 'Cl', mass: 34.968853, name: '氯' },
+    { symbol: 'Br', mass: 78.918337, name: '溴' },
+    { symbol: 'I', mass: 126.904473, name: '碘' },
+    { symbol: 'O', mass: 15.994915, name: '氧' }
+];
+
+// 最小分子量（甲烷）
+const MIN_MASS = 16.0313;
+// 实际计算上限
+const MAX_MASS = 300;
+
+// 杂原子索引（不包括氧）
+const HETERO_ATOM_INDICES = [2, 3, 4, 5, 6, 7, 8]; // N, S, P, F, Cl, Br, I
+
+// 处理键盘事件
+function handleKeyDown(event) {
+    if (event.key === 'Enter') {
+        handleCalculate();
+    }
+}
+
+class FormulaCalculator {
+    constructor() {
+        this.stack = [];
+        this.results = new Map();
+    }
+
+    initialize(target, tolerance = 0.002, maxHeteroAtoms = null, allowedHeteroTypes = null) {
+        this.target = target;
+        this.tolerance = tolerance;
+        this.maxHeteroAtoms = maxHeteroAtoms;
+        this.allowedHeteroIndices = this.parseAllowedHeteroTypes(allowedHeteroTypes);
+        this.stack = [{ index: 0, counts: new Array(elements.length).fill(0), mass: 0 }];
+        this.results.clear();
+    }
+
+    parseAllowedHeteroTypes(typesInput) {
+        if (!typesInput || typesInput.trim() === '') return null;
+        
+        const typeNames = typesInput.trim().split(/\s+/);
+        const allowedIndices = [];
+        
+        typeNames.forEach(name => {
+            const element = elements.find(e => e.name === name);
+            if (element && HETERO_ATOM_INDICES.includes(elements.indexOf(element))) {
+                allowedIndices.push(elements.indexOf(element));
+            }
+        });
+        
+        return allowedIndices.length > 0 ? allowedIndices : null;
+    }
+
+    calculate() {
+        // 如果目标分子量超过上限，直接返回空结果
+        if (this.target > MAX_MASS) {
+            return [];
+        }
+
+        while (this.stack.length > 0) {
+            const { index, counts, mass } = this.stack.pop();
+            
+            if (index === elements.length) {
+                if (this.isValid(counts)) {
+                    const formula = this.getFormula(counts);
+                    const error = Number((mass - this.target).toFixed(6));
+                    if (Math.abs(error) <= this.tolerance) {
+                        const category = this.classify(counts);
+                        if (!this.results.has(category)) {
+                            this.results.set(category, []);
+                        }
+                        this.results.get(category).push({
+                            formula,
+                            mass: Number(mass.toFixed(5)),
+                            error,
+                            ppm: Number((error / this.target * 1e6).toFixed(2))
+                        });
+                    }
+                }
+                continue;
+            }
+
+            const elem = elements[index];
+            const maxCount = Math.min(
+                Math.floor((this.target + this.tolerance - mass) / elem.mass),
+                30
+            );
+
+            for (let n = maxCount; n >= 0; n--) {
+                // 检查杂原子数量限制
+                if (this.maxHeteroAtoms !== null && HETERO_ATOM_INDICES.includes(index)) {
+                    const currentHeteroCount = this.countHeteroAtoms(counts, index, n);
+                    if (currentHeteroCount > this.maxHeteroAtoms) continue;
+                }
+                
+                // 检查杂原子类型限制
+                if (this.allowedHeteroIndices !== null && HETERO_ATOM_INDICES.includes(index) && n > 0) {
+                    if (!this.allowedHeteroIndices.includes(index)) continue;
+                }
+
+                const newMass = mass + n * elem.mass;
+                if (newMass > this.target + this.tolerance) continue;
+
+                const newCounts = [...counts];
+                newCounts[index] = n;
+                this.stack.push({
+                    index: index + 1,
+                    counts: newCounts,
+                    mass: newMass
+                });
+            }
+        }
+        return this.formatResults();
+    }
+
+    countHeteroAtoms(counts, currentIndex, currentCount) {
+        let total = 0;
+        for (let i = 0; i < counts.length; i++) {
+            if (HETERO_ATOM_INDICES.includes(i)) {
+                total += (i === currentIndex) ? currentCount : counts[i];
+            }
+        }
+        return total;
+    }
+
+    isValid(counts) {
+        const c = counts[0];
+        const h = counts[1];
+        if (c < 1 || h < 2) return false;
+
+        const o = counts[9];
+        const n = counts[2];
+        const s = counts[3];
+        const p = counts[4];
+        const maxH = 2 * c + 2 + 2 * (n + s + p) - 2 * o;
+        return h <= maxH;
+    }
+
+    getFormula(counts) {
+        return elements.map((e, i) => 
+            counts[i] > 0 ? e.symbol + (counts[i] > 1 ? counts[i] : '') : ''
+        ).join('');
+    }
+
+    classify(counts) {
+        const present = elements.filter((_, i) => counts[i] > 0).map(e => e.symbol);
+        const elemSet = new Set(present);
+
+        // 分类优先级：CHO > 卤素 > S/P > N > 其他
+        const categories = [
+            {
+                name: 'CHO化合物',
+                check: () => [...elemSet].every(e => ['C','H','O'].includes(e))
+            },
+            {
+                name: '卤素化合物',
+                check: () => ['F','Cl','Br','I'].some(e => elemSet.has(e)) &&
+                    [...elemSet].every(e => ['C','H','O','F','Cl','Br','I'].includes(e))
+            },
+            {
+                name: '硫/磷化合物',
+                check: () => (elemSet.has('S') || elemSet.has('P')) &&
+                    [...elemSet].every(e => ['C','H','O','S','P'].includes(e))
+            },
+            {
+                name: '含氮化合物',
+                check: () => elemSet.has('N') &&
+                    [...elemSet].every(e => ['C','H','O','N'].includes(e))
+            }
+        ];
+
+        for (const cat of categories) {
+            if (cat.check()) return cat.name;
+        }
+        return '其他化合物';
+    }
+
+    formatResults() {
+        const order = ['CHO化合物', '卤素化合物', '硫/磷化合物', '含氮化合物', '其他化合物'];
+        return order
+            .filter(cat => this.results.has(cat))
+            .map(cat => [cat, this.results.get(cat).sort((a, b) => Math.abs(a.error) - Math.abs(b.error))]);
+    }
+}
+
+function handleCalculate() {
+    const input = document.getElementById('massInput');
+    const target = parseFloat(input.value);
+    
+    if (isNaN(target)) {
+        alert('请输入有效数值');
+        return;
+    }
+
+    // 检查分子量范围
+    if (target < MIN_MASS) {
+        alert(`分子量过小！最小支持 ${MIN_MASS.toFixed(4)} Da（甲烷）`);
+        return;
+    }
+    
+    if (target > MAX_MASS) {
+        alert(`分子量过大！最大支持 ${MAX_MASS} Da`);
+        return;
+    }
+
+    // 获取杂原子限制参数
+    const heteroCountInput = document.getElementById('heteroAtomCount');
+    const maxHeteroAtoms = heteroCountInput.value ? parseInt(heteroCountInput.value) : null;
+    
+    // 获取杂原子种类限制参数
+    const heteroTypesInput = document.getElementById('heteroAtomTypes');
+    const allowedHeteroTypes = heteroTypesInput.value || null;
+
+    const calculator = new FormulaCalculator();
+    calculator.initialize(target, 0.002, maxHeteroAtoms, allowedHeteroTypes);
+    const results = calculator.calculate();
+
+    displayResults(target, results);
+    input.value = target.toFixed(5);
+    
+    // 计算完成后滚动到顶部
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function displayResults(target, results) {
+    const container = document.getElementById('results');
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    
+    card.innerHTML = `
+        <div class="result-header">
+            <div>🔍 计算结果：${target.toFixed(5)} Da</div>
+            <small>${new Date().toLocaleString()}</small>
+        </div>
+    `;
+
+    if (results.length === 0) {
+        const noResults = document.createElement('div');
+        noResults.textContent = '没有找到符合条件的分子式';
+        card.appendChild(noResults);
+    } else {
+        results.forEach(([category, items]) => {
+            const section = document.createElement('div');
+            section.innerHTML = `
+                <div class="${getCategoryClass(category)} category-tag">${category}</div>
+            `;
+
+            items.forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'formula-row';
+                row.innerHTML = `
+                    <div class="formula">${item.formula}</div>
+                    <div>
+                        <div>理论值：${item.mass.toFixed(5)} Da</div>
+                        <div class="error ${item.error >= 0 ? 'positive' : 'negative'}">
+                            ${item.error >= 0 ? '+' : ''}${item.error.toFixed(5)} Da (${item.ppm} ppm)
+                        </div>
+                    </div>
+                `;
+                section.appendChild(row);
+            });
+
+            card.appendChild(section);
+        });
+    }
+
+    container.prepend(card);
+    while (container.children.length > 3) container.lastChild.remove();
+}
+
+function getCategoryClass(category) {
+    return {
+        '卤素化合物': 'halogen',
+        '硫/磷化合物': 'sulfur-phosphor',
+        '含氮化合物': 'nitrogen',
+        'CHO化合物': 'cho',
+        '其他化合物': 'other'
+    }[category];
+}
+</script>
+</body>
+</html>
