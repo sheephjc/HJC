@@ -13,6 +13,7 @@
             --purple: #9b59b6;
             --orange: #e67e22;
             --red: #e74c3c;
+            --blue: #2980b9;
         }
 
         * {
@@ -59,12 +60,17 @@
         }
 
         .input-group {
-            display: grid;
+            display: flex;
             gap: 1rem;
+            align-items: center;
+        }
+
+        #massInput {
+            flex: 1;
+            min-width: 200px;
         }
 
         input[type="number"], input[type="text"] {
-            width: 100%;
             padding: 1rem;
             border: 2px solid #e0e0e0;
             border-radius: 10px;
@@ -76,11 +82,12 @@
             background: var(--secondary);
             color: white;
             border: none;
-            padding: 1rem 2rem;
+            padding: 1rem 1.5rem;
             border-radius: 10px;
             font-size: 1.1rem;
             cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
+            white-space: nowrap;
         }
 
         button:hover {
@@ -88,6 +95,112 @@
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
 
+        /* 限制条件模态框样式 */
+        #restrictionModal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 5px 30px rgba(0,0,0,0.3);
+            animation: modalFadeIn 0.3s;
+        }
+
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #eee;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            color: var(--primary);
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #999;
+            cursor: pointer;
+            padding: 0.5rem;
+        }
+
+        /* 新增两列布局样式 */
+        .restriction-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin: 1.5rem 0;
+        }
+
+        .restriction-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .restriction-table tr {
+            display: flex;
+            margin-bottom: 1rem;
+            align-items: center;
+        }
+
+        .restriction-table td {
+            padding: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .restriction-table td:first-child {
+            width: 100px;
+            padding-right: 1rem;
+            justify-content: flex-end;
+            font-weight: 500;
+        }
+
+        .restriction-table input {
+            width: 100px;
+            padding: 0.7rem;
+            margin: 0 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1rem;
+            text-align: center;
+        }
+
+        /* 按钮容器样式 */
+        .button-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            gap: 1rem;
+            height: 100%;
+        }
+
+        /* 其他原有样式保持不变... */
         .history-section {
             display: grid;
             gap: 1.5rem;
@@ -127,6 +240,7 @@
         .sulfur-phosphor { background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%); color: white; }
         .nitrogen { background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); color: white; }
         .cho { background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%); color: white; }
+        .boron { background: linear-gradient(135deg, #1abc9c 0%, #16a085 100%); color: white; }
         .other { background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%); color: white; }
 
         .formula-row {
@@ -167,67 +281,6 @@
             opacity: 1;
         }
 
-        .restriction-options {
-            display: grid;
-            gap: 1rem;
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 1px dashed #e0e0e0;
-        }
-
-        .option-label {
-            font-size: 0.95rem;
-            color: var(--primary);
-            margin-bottom: 0.5rem;
-        }
-
-        .collapsible {
-            background-color: #f1f1f1;
-            color: var(--primary);
-            cursor: pointer;
-            padding: 0.8rem;
-            width: 100%;
-            border: none;
-            text-align: left;
-            outline: none;
-            font-size: 1rem;
-            border-radius: 8px;
-            margin-top: 1rem;
-            transition: background-color 0.3s;
-        }
-        
-        .active, .collapsible:hover {
-            background-color: #e0e0e0;
-        }
-        
-        .collapsible:after {
-            content: '\002B';
-            color: var(--primary);
-            font-weight: bold;
-            float: right;
-            margin-left: 5px;
-        }
-        
-        .active:after {
-            content: '\2212';
-        }
-        
-        .collapsible-content {
-            padding: 0 1rem;
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.2s ease-out;
-            background-color: #f9f9f9;
-            border-radius: 0 0 8px 8px;
-        }
-        
-        .error-message {
-            color: var(--red);
-            font-size: 0.9rem;
-            margin-top: 0.5rem;
-            display: none;
-        }
-
         .timeout-warning {
             color: var(--red);
             background-color: #ffeeee;
@@ -244,32 +297,63 @@
             <h1>高分辨质谱仪分子式计算器</h1>
             <div class="input-group">
                 <input type="number" id="massInput" step="any" placeholder="输入分子量（例如：180.0634）">
+                <button id="restrictionBtn">⚙️ 限制条件</button>
                 <button id="calculateBtn">🚀 开始计算</button>
             </div>
             
-            <button type="button" class="collapsible">限制条件</button>
-            <div class="collapsible-content">
-                <div class="restriction-options">
-                    <div>
-                        <div class="option-label">杂原子总数限制（0-10，不包括CHO）</div>
-                        <input type="number" id="heteroAtomCount" min="0" max="10" placeholder="输入0-10之间的整数">
-                        <div id="heteroCountError" class="error-message"></div>
-                    </div>
-                    <div>
-                        <div class="option-label">杂原子种类限制（用空格分隔，仅支持：氮 硫 磷 氟 氯 溴 碘）</div>
-                        <input type="text" id="heteroAtomTypes" placeholder="例如：氮 硫 氯">
-                        <div id="heteroTypeError" class="error-message"></div>
-                    </div>
+            <div class="restriction-options" style="display: none;">
+                <!-- 原有限制条件保留但隐藏 -->
+                <div>
+                    <div class="option-label">杂原子总数限制（0-10，不包括CHO）</div>
+                    <input type="number" id="heteroAtomCount" min="0" max="10" placeholder="输入0-10之间的整数">
+                    <div id="heteroCountError" class="error-message"></div>
+                </div>
+                <div>
+                    <div class="option-label">杂原子种类限制</div>
+                    <input type="text" id="heteroAtomTypes" placeholder="例如：氮 硫 氯">
+                    <div id="heteroTypeError" class="error-message"></div>
                 </div>
             </div>
         </div>
         <div id="results" class="history-section"></div>
     </div>
     
+    <!-- 限制条件模态框 -->
+    <div id="restrictionModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">原子数量限制</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            
+            <div class="restriction-columns">
+                <!-- 左列 (CHONSP) -->
+                <table class="restriction-table">
+                    <tbody id="leftColumnElements">
+                        <!-- 动态生成CHONSP元素 -->
+                    </tbody>
+                </table>
+                
+                <!-- 右列 (BFClBrI + 按钮) -->
+                <div style="display: flex; flex-direction: column;">
+                    <table class="restriction-table">
+                        <tbody id="rightColumnElements">
+                            <!-- 动态生成BFClBrI元素 -->
+                        </tbody>
+                    </table>
+                    <div class="button-container">
+                        <button id="clearRestrictions" style="background: #e74c3c;">🗑️ 全清</button>
+                        <button id="saveRestrictions" style="background: #27ae60;">💾 保存设置</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <div class="credits">BUCT-HJC</div>
 
     <script>
-    // 元素定义（明确标注杂原子）
+    // 元素定义（添加了硼元素）
     const elements = [
         { symbol: 'C', mass: 12.000000, name: '碳', isHetero: false },
         { symbol: 'H', mass: 1.007825, name: '氢', isHetero: false },
@@ -280,34 +364,34 @@
         { symbol: 'Cl', mass: 34.968853, name: '氯', isHetero: true },
         { symbol: 'Br', mass: 78.918337, name: '溴', isHetero: true },
         { symbol: 'I', mass: 126.904473, name: '碘', isHetero: true },
-        { symbol: 'O', mass: 15.994915, name: '氧', isHetero: false }
+        { symbol: 'O', mass: 15.994915, name: '氧', isHetero: false },
+        { symbol: 'B', mass: 11.009305, name: '硼', isHetero: true }
     ];
 
     // 常量定义
     const MIN_MASS = 16.0313;
     const MAX_MASS = 1000;
     const CALCULATION_TIMEOUT = 10000;
-    const VALID_HETERO_NAMES = ['氮', '硫', '磷', '氟', '氯', '溴', '碘'];
-    const MAX_HETERO_ATOMS = 10; // 杂原子数量上限
+    const VALID_HETERO_NAMES = ['氮', '硫', '磷', '氟', '氯', '溴', '碘', '硼'];
+    const MAX_HETERO_ATOMS = 10;
+
+    // 全局变量
+    let restrictionSettings = {};
 
     // 初始化
     document.addEventListener('DOMContentLoaded', function() {
-        // 折叠面板功能
-        const coll = document.getElementsByClassName("collapsible");
-        for (let i = 0; i < coll.length; i++) {
-            coll[i].addEventListener("click", function() {
-                this.classList.toggle("active");
-                const content = this.nextElementSibling;
-                if (content.style.maxHeight) {
-                    content.style.maxHeight = null;
-                } else {
-                    content.style.maxHeight = content.scrollHeight + "px";
-                }
-            });
-        }
-
+        // 加载保存的限制条件
+        loadRestrictionSettings();
+        
+        // 初始化模态框
+        initRestrictionModal();
+        
         // 绑定事件
         document.getElementById('calculateBtn').addEventListener('click', handleCalculate);
+        document.getElementById('restrictionBtn').addEventListener('click', showRestrictionModal);
+        document.getElementById('saveRestrictions').addEventListener('click', saveRestrictionSettings);
+        document.getElementById('clearRestrictions').addEventListener('click', clearRestrictionSettings);
+        document.querySelector('.close-modal').addEventListener('click', hideRestrictionModal);
         
         // 为所有输入框添加回车键支持
         const inputs = document.querySelectorAll('input');
@@ -319,6 +403,100 @@
             });
         });
     });
+
+    // 限制条件模态框功能
+    function initRestrictionModal() {
+        const leftColumn = document.getElementById('leftColumnElements');
+        const rightColumn = document.getElementById('rightColumnElements');
+        
+        // 左列元素 (CHONSP)
+        const leftElements = ['C', 'H', 'O', 'N', 'S', 'P'];
+        // 右列元素 (BFClBrI)
+        const rightElements = ['B', 'F', 'Cl', 'Br', 'I'];
+
+        // 生成左列元素
+        leftElements.forEach(symbol => {
+            const elem = elements.find(e => e.symbol === symbol);
+            if (elem) {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${elem.name} (${elem.symbol})</td>
+                    <td><input type="number" id="min_${elem.symbol}" min="0" placeholder="最小"></td>
+                    <td><input type="number" id="max_${elem.symbol}" min="0" placeholder="最大"></td>
+                `;
+                leftColumn.appendChild(row);
+            }
+        });
+
+        // 生成右列元素
+        rightElements.forEach(symbol => {
+            const elem = elements.find(e => e.symbol === symbol);
+            if (elem) {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${elem.name} (${elem.symbol})</td>
+                    <td><input type="number" id="min_${elem.symbol}" min="0" placeholder="最小"></td>
+                    <td><input type="number" id="max_${elem.symbol}" min="0" placeholder="最大"></td>
+                `;
+                rightColumn.appendChild(row);
+            }
+        });
+    }
+
+    function showRestrictionModal() {
+        // 填充当前设置
+        elements.forEach(elem => {
+            const settings = restrictionSettings[elem.symbol];
+            if (settings) {
+                if (settings.min !== undefined) document.getElementById(`min_${elem.symbol}`).value = settings.min;
+                if (settings.max !== undefined) document.getElementById(`max_${elem.symbol}`).value = settings.max;
+            } else {
+                document.getElementById(`min_${elem.symbol}`).value = '';
+                document.getElementById(`max_${elem.symbol}`).value = '';
+            }
+        });
+        
+        document.getElementById('restrictionModal').style.display = 'flex';
+    }
+
+    function hideRestrictionModal() {
+        document.getElementById('restrictionModal').style.display = 'none';
+    }
+
+    function loadRestrictionSettings() {
+        const saved = localStorage.getItem('restrictionSettings');
+        if (saved) {
+            restrictionSettings = JSON.parse(saved);
+        }
+    }
+
+    function saveRestrictionSettings() {
+        const newSettings = {};
+        
+        elements.forEach(elem => {
+            const min = document.getElementById(`min_${elem.symbol}`).value;
+            const max = document.getElementById(`max_${elem.symbol}`).value;
+            
+            if (min || max) {
+                newSettings[elem.symbol] = {};
+                if (min) newSettings[elem.symbol].min = parseInt(min);
+                if (max) newSettings[elem.symbol].max = parseInt(max);
+            }
+        });
+        
+        restrictionSettings = newSettings;
+        localStorage.setItem('restrictionSettings', JSON.stringify(restrictionSettings));
+        hideRestrictionModal();
+    }
+
+    function clearRestrictionSettings() {
+        elements.forEach(elem => {
+            document.getElementById(`min_${elem.symbol}`).value = '';
+            document.getElementById(`max_${elem.symbol}`).value = '';
+        });
+        restrictionSettings = {};
+        localStorage.removeItem('restrictionSettings');
+    }
 
     class FormulaCalculator {
         constructor() {
@@ -385,7 +563,7 @@
                 const { index, counts, mass } = this.stack.pop();
                 
                 if (index === elements.length) {
-                    if (this.isValid(counts)) {
+                    if (this.isValid(counts) && this.checkElementLimits(counts)) {
                         // 严格检查杂原子数量限制
                         if (this.maxHeteroAtoms !== null) {
                             const totalHetero = this.countHeteroAtoms(counts);
@@ -412,12 +590,25 @@
                 }
 
                 const elem = elements[index];
-                const maxCount = Math.min(
+                let maxCount = Math.min(
                     Math.floor((this.target + this.tolerance - mass) / elem.mass),
                     30
                 );
 
+                // 应用元素数量限制
+                if (restrictionSettings[elem.symbol]) {
+                    const { min, max } = restrictionSettings[elem.symbol];
+                    if (max !== undefined) {
+                        maxCount = Math.min(maxCount, max);
+                    }
+                }
+
                 for (let n = maxCount; n >= 0; n--) {
+                    // 检查元素最小限制
+                    if (restrictionSettings[elem.symbol] && restrictionSettings[elem.symbol].min !== undefined) {
+                        if (n < restrictionSettings[elem.symbol].min) continue;
+                    }
+
                     // 检查杂原子类型限制
                     if (this.allowedHeteroIndices !== null && elem.isHetero && n > 0) {
                         if (!this.allowedHeteroIndices.includes(index)) continue;
@@ -436,6 +627,18 @@
                 }
             }
             return this.formatResults();
+        }
+
+        checkElementLimits(counts) {
+            for (let i = 0; i < counts.length; i++) {
+                const elem = elements[i];
+                const settings = restrictionSettings[elem.symbol];
+                if (settings) {
+                    if (settings.min !== undefined && counts[i] < settings.min) return false;
+                    if (settings.max !== undefined && counts[i] > settings.max) return false;
+                }
+            }
+            return true;
         }
 
         countHeteroAtoms(counts) {
@@ -457,7 +660,8 @@
             const n = counts[2];
             const s = counts[3];
             const p = counts[4];
-            const maxH = 2 * c + 2 + 2 * (n + s + p) - 2 * o;
+            const b = counts[10];
+            const maxH = 2 * c + 2 + 2 * (n + s + p + b) - 2 * o;
             return h <= maxH;
         }
 
@@ -475,6 +679,11 @@
                 {
                     name: 'CHO化合物',
                     check: () => [...elemSet].every(e => ['C','H','O'].includes(e))
+                },
+                {
+                    name: '硼化合物',
+                    check: () => elemSet.has('B') &&
+                        [...elemSet].every(e => ['C','H','O','B'].includes(e))
                 },
                 {
                     name: '卤素化合物',
@@ -500,7 +709,7 @@
         }
 
         formatResults() {
-            const order = ['CHO化合物', '卤素化合物', '硫/磷化合物', '含氮化合物', '其他化合物'];
+            const order = ['CHO化合物', '硼化合物', '卤素化合物', '硫/磷化合物', '含氮化合物', '其他化合物'];
             return order
                 .filter(cat => this.results.has(cat))
                 .map(cat => [cat, this.results.get(cat).sort((a, b) => Math.abs(a.error) - Math.abs(b.error))]);
@@ -625,6 +834,7 @@
             '硫/磷化合物': 'sulfur-phosphor',
             '含氮化合物': 'nitrogen',
             'CHO化合物': 'cho',
+            '硼化合物': 'boron',
             '其他化合物': 'other'
         }[category];
     }
