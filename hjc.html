@@ -332,6 +332,14 @@
                     <tbody id="leftColumnElements">
                         <!-- 动态生成CHONSP元素 -->
                     </tbody>
+                    <tr>
+                        <td>离子峰类型</td>
+                        <td colspan="2">
+                            <label style="display: flex; align-items: center;">
+                                <input type="checkbox" id="mNaPeak"> 【M+Na】离子峰
+                            </label>
+                        </td>
+                    </tr>
                 </table>
                 
                 <!-- 右列 (BFClBrI + 按钮) -->
@@ -374,6 +382,7 @@
     const CALCULATION_TIMEOUT = 10000;
     const VALID_HETERO_NAMES = ['氮', '硫', '磷', '氟', '氯', '溴', '碘', '硼'];
     const MAX_HETERO_ATOMS = 10;
+    const NA_MASS = 22.989769;  // Na的分子量
 
     // 全局变量
     let restrictionSettings = {};
@@ -456,6 +465,13 @@
             }
         });
         
+        // 填充【M+Na】选项
+        if (restrictionSettings.mNaPeak !== undefined) {
+            document.getElementById('mNaPeak').checked = restrictionSettings.mNaPeak;
+        } else {
+            document.getElementById('mNaPeak').checked = false;
+        }
+        
         document.getElementById('restrictionModal').style.display = 'flex';
     }
 
@@ -479,365 +495,385 @@
             
             if (min || max) {
                 newSettings[elem.symbol] = {};
-                if (min) newSettings[elem.symbol].min = parseInt(min);
-                if (max) newSettings[elem.symbol].max = parseInt(max);
-            }
-        });
-        
-        restrictionSettings = newSettings;
-        localStorage.setItem('restrictionSettings', JSON.stringify(restrictionSettings));
-        hideRestrictionModal();
-    }
-
-    function clearRestrictionSettings() {
-        elements.forEach(elem => {
-            document.getElementById(`min_${elem.symbol}`).value = '';
-            document.getElementById(`max_${elem.symbol}`).value = '';
-        });
-        restrictionSettings = {};
-        localStorage.removeItem('restrictionSettings');
-    }
-
-    class FormulaCalculator {
-        constructor() {
-            this.stack = [];
-            this.results = new Map();
-            this.timeout = false;
-        }
-
-        initialize(target, tolerance = 0.002, maxHeteroAtoms = null, allowedHeteroTypes = null) {
-            this.target = target;
-            this.tolerance = tolerance;
-            this.maxHeteroAtoms = maxHeteroAtoms;
-            this.allowedHeteroIndices = this.parseAllowedHeteroTypes(allowedHeteroTypes);
-            this.stack = [{ index: 0, counts: new Array(elements.length).fill(0), mass: 0 }];
-            this.results.clear();
-            this.timeout = false;
-        }
-
-        parseAllowedHeteroTypes(typesInput) {
-            if (!typesInput || typesInput.trim() === '') return null;
-            
-            const typeNames = typesInput.trim().split(/\s+/).filter(name => name !== '');
-            const allowedIndices = [];
-            const invalidTypes = [];
-            
-            typeNames.forEach(name => {
-                if (VALID_HETERO_NAMES.includes(name)) {
-                    const element = elements.find(e => e.name === name);
-                    if (element) {
-                        allowedIndices.push(elements.indexOf(element));
+                        if (min) newSettings[elem.symbol].min = parseInt(min);
+                        if (max) newSettings[elem.symbol].max = parseInt(max);
                     }
-                } else {
-                    invalidTypes.push(name);
-                }
-            });
-            
-            if (invalidTypes.length > 0) {
-                document.getElementById('heteroTypeError').textContent = 
-                    `无效的杂原子类型: ${invalidTypes.join(', ')}。有效类型: ${VALID_HETERO_NAMES.join(', ')}`;
-                document.getElementById('heteroTypeError').style.display = 'block';
-                throw new Error("Invalid heteroatom types");
-            }
-            
-            document.getElementById('heteroTypeError').style.display = 'none';
-            return allowedIndices.length > 0 ? allowedIndices : null;
-        }
-
-        calculate() {
-            if (this.target > MAX_MASS) return [];
-
-            const startTime = Date.now();
-            let lastCheckTime = startTime;
-
-            while (this.stack.length > 0) {
-                const currentTime = Date.now();
-                if (currentTime - lastCheckTime > 100) {
-                    if (currentTime - startTime > CALCULATION_TIMEOUT) {
-                        this.timeout = true;
-                        return [];
-                    }
-                    lastCheckTime = currentTime;
-                }
-
-                const { index, counts, mass } = this.stack.pop();
+                });
                 
-                if (index === elements.length) {
-                    if (this.isValid(counts) && this.checkElementLimits(counts)) {
-                        // 严格检查杂原子数量限制
-                        if (this.maxHeteroAtoms !== null) {
-                            const totalHetero = this.countHeteroAtoms(counts);
-                            if (totalHetero !== this.maxHeteroAtoms) continue;
-                        }
-                        
-                        const formula = this.getFormula(counts);
-                        const error = Number((mass - this.target).toFixed(6));
-                        if (Math.abs(error) <= this.tolerance) {
-                            const category = this.classify(counts);
-                            if (!this.results.has(category)) {
-                                this.results.set(category, []);
+                // 保存【M+Na】选项
+                newSettings.mNaPeak = document.getElementById('mNaPeak').checked;
+                
+                restrictionSettings = newSettings;
+                localStorage.setItem('restrictionSettings', JSON.stringify(restrictionSettings));
+                hideRestrictionModal();
+            }
+
+            function clearRestrictionSettings() {
+                elements.forEach(elem => {
+                    document.getElementById(`min_${elem.symbol}`).value = '';
+                    document.getElementById(`max_${elem.symbol}`).value = '';
+                });
+                document.getElementById('mNaPeak').checked = false;
+                restrictionSettings = {};
+                localStorage.removeItem('restrictionSettings');
+            }
+
+            class FormulaCalculator {
+                constructor() {
+                    this.stack = [];
+                    this.results = new Map();
+                    this.timeout = false;
+                }
+
+                initialize(target, tolerance = 0.002, maxHeteroAtoms = null, allowedHeteroTypes = null) {
+                    this.target = target;
+                    this.tolerance = tolerance;
+                    this.maxHeteroAtoms = maxHeteroAtoms;
+                    this.allowedHeteroIndices = this.parseAllowedHeteroTypes(allowedHeteroTypes);
+                    this.stack = [{ index: 0, counts: new Array(elements.length).fill(0), mass: 0 }];
+                    this.results.clear();
+                    this.timeout = false;
+                }
+
+                parseAllowedHeteroTypes(typesInput) {
+                    if (!typesInput || typesInput.trim() === '') return null;
+                    
+                    const typeNames = typesInput.trim().split(/\s+/).filter(name => name !== '');
+                    const allowedIndices = [];
+                    const invalidTypes = [];
+                    
+                    typeNames.forEach(name => {
+                        if (VALID_HETERO_NAMES.includes(name)) {
+                            const element = elements.find(e => e.name === name);
+                            if (element) {
+                                allowedIndices.push(elements.indexOf(element));
                             }
-                            this.results.get(category).push({
-                                formula,
-                                mass: Number(mass.toFixed(5)),
-                                error,
-                                ppm: Number((error / this.target * 1e6).toFixed(2)),
-                                heteroCount: this.countHeteroAtoms(counts)
+                        } else {
+                            invalidTypes.push(name);
+                        }
+                    });
+                    
+                    if (invalidTypes.length > 0) {
+                        document.getElementById('heteroTypeError').textContent = 
+                            `无效的杂原子类型: ${invalidTypes.join(', ')}。有效类型: ${VALID_HETERO_NAMES.join(', ')}`;
+                        document.getElementById('heteroTypeError').style.display = 'block';
+                        throw new Error("Invalid heteroatom types");
+                    }
+                    
+                    document.getElementById('heteroTypeError').style.display = 'none';
+                    return allowedIndices.length > 0 ? allowedIndices : null;
+                }
+
+                calculate() {
+                    if (this.target > MAX_MASS) return [];
+
+                    const startTime = Date.now();
+                    let lastCheckTime = startTime;
+
+                    while (this.stack.length > 0) {
+                        const currentTime = Date.now();
+                        if (currentTime - lastCheckTime > 100) {
+                            if (currentTime - startTime > CALCULATION_TIMEOUT) {
+                                this.timeout = true;
+                                return [];
+                            }
+                            lastCheckTime = currentTime;
+                        }
+
+                        const { index, counts, mass } = this.stack.pop();
+                        
+                        if (index === elements.length) {
+                            if (this.isValid(counts) && this.checkElementLimits(counts)) {
+                                // 严格检查杂原子数量限制
+                                if (this.maxHeteroAtoms !== null) {
+                                    const totalHetero = this.countHeteroAtoms(counts);
+                                    if (totalHetero !== this.maxHeteroAtoms) continue;
+                                }
+                                
+                                const formula = this.getFormula(counts);
+                                const error = Number((mass - this.target).toFixed(6));
+                                if (Math.abs(error) <= this.tolerance) {
+                                    const category = this.classify(counts);
+                                    if (!this.results.has(category)) {
+                                        this.results.set(category, []);
+                                    }
+                                    this.results.get(category).push({
+                                        formula,
+                                        mass: Number(mass.toFixed(5)),
+                                        error,
+                                        ppm: Number((error / this.target * 1e6).toFixed(2)),
+                                        heteroCount: this.countHeteroAtoms(counts)
+                                    });
+                                }
+                            }
+                            continue;
+                        }
+
+                        const elem = elements[index];
+                        let maxCount = Math.min(
+                            Math.floor((this.target + this.tolerance - mass) / elem.mass),
+                            30
+                        );
+
+                        // 应用元素数量限制
+                        if (restrictionSettings[elem.symbol]) {
+                            const { min, max } = restrictionSettings[elem.symbol];
+                            if (max !== undefined) {
+                                maxCount = Math.min(maxCount, max);
+                            }
+                        }
+
+                        for (let n = maxCount; n >= 0; n--) {
+                            // 检查元素最小限制
+                            if (restrictionSettings[elem.symbol] && restrictionSettings[elem.symbol].min !== undefined) {
+                                if (n < restrictionSettings[elem.symbol].min) continue;
+                            }
+
+                            // 检查杂原子类型限制
+                            if (this.allowedHeteroIndices !== null && elem.isHetero && n > 0) {
+                                if (!this.allowedHeteroIndices.includes(index)) continue;
+                            }
+
+                            const newMass = mass + n * elem.mass;
+                            if (newMass > this.target + this.tolerance) continue;
+
+                            const newCounts = [...counts];
+                            newCounts[index] = n;
+                            this.stack.push({
+                                index: index + 1,
+                                counts: newCounts,
+                                mass: newMass
                             });
                         }
                     }
-                    continue;
+                    return this.formatResults();
                 }
 
-                const elem = elements[index];
-                let maxCount = Math.min(
-                    Math.floor((this.target + this.tolerance - mass) / elem.mass),
-                    30
-                );
+                checkElementLimits(counts) {
+                    for (let i = 0; i < counts.length; i++) {
+                        const elem = elements[i];
+                        const settings = restrictionSettings[elem.symbol];
+                        if (settings) {
+                            if (settings.min !== undefined && counts[i] < settings.min) return false;
+                            if (settings.max !== undefined && counts[i] > settings.max) return false;
+                        }
+                    }
+                    return true;
+                }
 
-                // 应用元素数量限制
-                if (restrictionSettings[elem.symbol]) {
-                    const { min, max } = restrictionSettings[elem.symbol];
-                    if (max !== undefined) {
-                        maxCount = Math.min(maxCount, max);
+                countHeteroAtoms(counts) {
+                    let total = 0;
+                    for (let i = 0; i < counts.length; i++) {
+                        if (elements[i].isHetero) {
+                            total += counts[i] || 0;
+                        }
+                    }
+                    return total;
+                }
+
+                isValid(counts) {
+                    const c = counts[0];
+                    const h = counts[1];
+                    if (c < 1 || h < 2) return false;
+
+                    const o = counts[9];
+                    const n = counts[2];
+                    const s = counts[3];
+                    const p = counts[4];
+                    const b = counts[10];
+                    const maxH = 2 * c + 2 + 2 * (n + s + p + b) - 2 * o;
+                    return h <= maxH;
+                }
+
+                getFormula(counts) {
+                    return elements.map((e, i) => 
+                        counts[i] > 0 ? e.symbol + (counts[i] > 1 ? counts[i] : '') : ''
+                    ).join('');
+                }
+
+                classify(counts) {
+                    const present = elements.filter((_, i) => counts[i] > 0).map(e => e.symbol);
+                    const elemSet = new Set(present);
+
+                    const categories = [
+                        {
+                            name: 'CHO化合物',
+                            check: () => [...elemSet].every(e => ['C','H','O'].includes(e))
+                        },
+                        {
+                            name: '硼化合物',
+                            check: () => elemSet.has('B') &&
+                                [...elemSet].every(e => ['C','H','O','B'].includes(e))
+                        },
+                        {
+                            name: '卤素化合物',
+                            check: () => ['F','Cl','Br','I'].some(e => elemSet.has(e)) &&
+                                [...elemSet].every(e => ['C','H','O','F','Cl','Br','I'].includes(e))
+                        },
+                        {
+                            name: '硫/磷化合物',
+                            check: () => (elemSet.has('S') || elemSet.has('P')) &&
+                                [...elemSet].every(e => ['C','H','O','S','P'].includes(e))
+                        },
+                        {
+                            name: '含氮化合物',
+                            check: () => elemSet.has('N') &&
+                                [...elemSet].every(e => ['C','H','O','N'].includes(e))
+                        }
+                    ];
+
+                    for (const cat of categories) {
+                        if (cat.check()) return cat.name;
+                    }
+                    return '其他化合物';
+                }
+
+                formatResults() {
+                    const order = ['CHO化合物', '硼化合物', '卤素化合物', '硫/磷化合物', '含氮化合物', '其他化合物'];
+                    return order
+                        .filter(cat => this.results.has(cat))
+                        .map(cat => [cat, this.results.get(cat).sort((a, b) => Math.abs(a.error) - Math.abs(b.error))]);
+                }
+            }
+
+            function handleCalculate() {
+                // 清除错误信息
+                document.getElementById('heteroCountError').style.display = 'none';
+                document.getElementById('heteroTypeError').style.display = 'none';
+
+                const input = document.getElementById('massInput');
+                const target = parseFloat(input.value);
+                
+                if (isNaN(target)) {
+                    alert('请输入有效数值');
+                    return;
+                }
+
+                if (target < MIN_MASS) {
+                    alert(`分子量过小！最小支持 ${MIN_MASS.toFixed(4)} Da（甲烷）`);
+                    return;
+                }
+                
+                if (target > MAX_MASS) {
+                    alert(`分子量过大！最大支持 ${MAX_MASS} Da`);
+                    return;
+                }
+
+                // 处理杂原子数量限制
+                const heteroCountInput = document.getElementById('heteroAtomCount');
+                let maxHeteroAtoms = null;
+                if (heteroCountInput.value) {
+                    maxHeteroAtoms = parseInt(heteroCountInput.value);
+                    if (maxHeteroAtoms < 0 || maxHeteroAtoms > MAX_HETERO_ATOMS) {
+                        document.getElementById('heteroCountError').textContent = 
+                            `杂原子数量必须在0-${MAX_HETERO_ATOMS}之间`;
+                        document.getElementById('heteroCountError').style.display = 'block';
+                        return;
+                    }
+                }
+                
+                // 处理杂原子种类限制
+                const heteroTypesInput = document.getElementById('heteroAtomTypes');
+                const allowedHeteroTypes = heteroTypesInput.value || null;
+
+                let actualTarget = target;
+                // 如果勾选了【M+Na】选项，则减去Na的质量
+                if (restrictionSettings.mNaPeak) {
+                    actualTarget -= NA_MASS;
+                    // 确保减去后的质量仍然有效
+                    if (actualTarget < MIN_MASS) {
+                        alert(`减去Na质量后的分子量(${actualTarget.toFixed(4)} Da)过小！最小支持 ${MIN_MASS.toFixed(4)} Da`);
+                        return;
                     }
                 }
 
-                for (let n = maxCount; n >= 0; n--) {
-                    // 检查元素最小限制
-                    if (restrictionSettings[elem.symbol] && restrictionSettings[elem.symbol].min !== undefined) {
-                        if (n < restrictionSettings[elem.symbol].min) continue;
+                const calculator = new FormulaCalculator();
+                try {
+                    calculator.initialize(actualTarget, 0.002, maxHeteroAtoms, allowedHeteroTypes);
+                    const results = calculator.calculate();
+
+                    if (calculator.timeout) {
+                        displayResults(target, [], '计算超时：10秒内未完成。请添加更多限制条件以缩小搜索范围。');
+                    } else {
+                        displayResults(target, results);
                     }
-
-                    // 检查杂原子类型限制
-                    if (this.allowedHeteroIndices !== null && elem.isHetero && n > 0) {
-                        if (!this.allowedHeteroIndices.includes(index)) continue;
-                    }
-
-                    const newMass = mass + n * elem.mass;
-                    if (newMass > this.target + this.tolerance) continue;
-
-                    const newCounts = [...counts];
-                    newCounts[index] = n;
-                    this.stack.push({
-                        index: index + 1,
-                        counts: newCounts,
-                        mass: newMass
-                    });
+                } catch (e) {
+                    return; // 类型错误已在parseAllowedHeteroTypes中处理
                 }
+                
+                input.value = target.toFixed(5);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             }
-            return this.formatResults();
-        }
 
-        checkElementLimits(counts) {
-            for (let i = 0; i < counts.length; i++) {
-                const elem = elements[i];
-                const settings = restrictionSettings[elem.symbol];
-                if (settings) {
-                    if (settings.min !== undefined && counts[i] < settings.min) return false;
-                    if (settings.max !== undefined && counts[i] > settings.max) return false;
+            function displayResults(target, results, timeoutMessage = null) {
+                const container = document.getElementById('results');
+                const card = document.createElement('div');
+                card.className = 'result-card';
+                
+                let title = `🔍 计算结果：${target.toFixed(5)} Da`;
+                if (restrictionSettings.mNaPeak) {
+                    title += ` (已应用【M+Na】校正，实际计算质量: ${(target - NA_MASS).toFixed(5)} Da)`;
                 }
-            }
-            return true;
-        }
-
-        countHeteroAtoms(counts) {
-            let total = 0;
-            for (let i = 0; i < counts.length; i++) {
-                if (elements[i].isHetero) {
-                    total += counts[i] || 0;
-                }
-            }
-            return total;
-        }
-
-        isValid(counts) {
-            const c = counts[0];
-            const h = counts[1];
-            if (c < 1 || h < 2) return false;
-
-            const o = counts[9];
-            const n = counts[2];
-            const s = counts[3];
-            const p = counts[4];
-            const b = counts[10];
-            const maxH = 2 * c + 2 + 2 * (n + s + p + b) - 2 * o;
-            return h <= maxH;
-        }
-
-        getFormula(counts) {
-            return elements.map((e, i) => 
-                counts[i] > 0 ? e.symbol + (counts[i] > 1 ? counts[i] : '') : ''
-            ).join('');
-        }
-
-        classify(counts) {
-            const present = elements.filter((_, i) => counts[i] > 0).map(e => e.symbol);
-            const elemSet = new Set(present);
-
-            const categories = [
-                {
-                    name: 'CHO化合物',
-                    check: () => [...elemSet].every(e => ['C','H','O'].includes(e))
-                },
-                {
-                    name: '硼化合物',
-                    check: () => elemSet.has('B') &&
-                        [...elemSet].every(e => ['C','H','O','B'].includes(e))
-                },
-                {
-                    name: '卤素化合物',
-                    check: () => ['F','Cl','Br','I'].some(e => elemSet.has(e)) &&
-                        [...elemSet].every(e => ['C','H','O','F','Cl','Br','I'].includes(e))
-                },
-                {
-                    name: '硫/磷化合物',
-                    check: () => (elemSet.has('S') || elemSet.has('P')) &&
-                        [...elemSet].every(e => ['C','H','O','S','P'].includes(e))
-                },
-                {
-                    name: '含氮化合物',
-                    check: () => elemSet.has('N') &&
-                        [...elemSet].every(e => ['C','H','O','N'].includes(e))
-                }
-            ];
-
-            for (const cat of categories) {
-                if (cat.check()) return cat.name;
-            }
-            return '其他化合物';
-        }
-
-        formatResults() {
-            const order = ['CHO化合物', '硼化合物', '卤素化合物', '硫/磷化合物', '含氮化合物', '其他化合物'];
-            return order
-                .filter(cat => this.results.has(cat))
-                .map(cat => [cat, this.results.get(cat).sort((a, b) => Math.abs(a.error) - Math.abs(b.error))]);
-        }
-    }
-
-    function handleCalculate() {
-        // 清除错误信息
-        document.getElementById('heteroCountError').style.display = 'none';
-        document.getElementById('heteroTypeError').style.display = 'none';
-
-        const input = document.getElementById('massInput');
-        const target = parseFloat(input.value);
-        
-        if (isNaN(target)) {
-            alert('请输入有效数值');
-            return;
-        }
-
-        if (target < MIN_MASS) {
-            alert(`分子量过小！最小支持 ${MIN_MASS.toFixed(4)} Da（甲烷）`);
-            return;
-        }
-        
-        if (target > MAX_MASS) {
-            alert(`分子量过大！最大支持 ${MAX_MASS} Da`);
-            return;
-        }
-
-        // 处理杂原子数量限制
-        const heteroCountInput = document.getElementById('heteroAtomCount');
-        let maxHeteroAtoms = null;
-        if (heteroCountInput.value) {
-            maxHeteroAtoms = parseInt(heteroCountInput.value);
-            if (maxHeteroAtoms < 0 || maxHeteroAtoms > MAX_HETERO_ATOMS) {
-                document.getElementById('heteroCountError').textContent = 
-                    `杂原子数量必须在0-${MAX_HETERO_ATOMS}之间`;
-                document.getElementById('heteroCountError').style.display = 'block';
-                return;
-            }
-        }
-        
-        // 处理杂原子种类限制
-        const heteroTypesInput = document.getElementById('heteroAtomTypes');
-        const allowedHeteroTypes = heteroTypesInput.value || null;
-
-        const calculator = new FormulaCalculator();
-        try {
-            calculator.initialize(target, 0.002, maxHeteroAtoms, allowedHeteroTypes);
-            const results = calculator.calculate();
-
-            if (calculator.timeout) {
-                displayResults(target, [], '计算超时：10秒内未完成。请添加更多限制条件以缩小搜索范围。');
-            } else {
-                displayResults(target, results);
-            }
-        } catch (e) {
-            return; // 类型错误已在parseAllowedHeteroTypes中处理
-        }
-        
-        input.value = target.toFixed(5);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-
-    function displayResults(target, results, timeoutMessage = null) {
-        const container = document.getElementById('results');
-        const card = document.createElement('div');
-        card.className = 'result-card';
-        
-        card.innerHTML = `
-            <div class="result-header">
-                <div>🔍 计算结果：${target.toFixed(5)} Da</div>
-                <small>${new Date().toLocaleString()}</small>
-            </div>
-        `;
-
-        if (timeoutMessage) {
-            const timeoutDiv = document.createElement('div');
-            timeoutDiv.className = 'timeout-warning';
-            timeoutDiv.innerHTML = `⚠️ ${timeoutMessage}`;
-            card.appendChild(timeoutDiv);
-        }
-
-        if (results.length === 0 && !timeoutMessage) {
-            const noResults = document.createElement('div');
-            noResults.textContent = '没有找到符合条件的分子式';
-            card.appendChild(noResults);
-        } else {
-            results.forEach(([category, items]) => {
-                const section = document.createElement('div');
-                section.innerHTML = `
-                    <div class="${getCategoryClass(category)} category-tag">${category}</div>
+                
+                card.innerHTML = `
+                    <div class="result-header">
+                        <div>${title}</div>
+                        <small>${new Date().toLocaleString()}</small>
+                    </div>
                 `;
 
-                items.forEach(item => {
-                    const row = document.createElement('div');
-                    row.className = 'formula-row';
-                    row.innerHTML = `
-                        <div class="formula">${item.formula}</div>
-                        <div>
-                            <div>理论值：${item.mass.toFixed(5)} Da</div>
-                            <div>杂原子数：${item.heteroCount}</div>
-                            <div class="error ${item.error >= 0 ? 'positive' : 'negative'}">
-                                ${item.error >= 0 ? '+' : ''}${item.error.toFixed(5)} Da (${item.ppm} ppm)
-                            </div>
-                        </div>
-                    `;
-                    section.appendChild(row);
-                });
+                if (timeoutMessage) {
+                    const timeoutDiv = document.createElement('div');
+                    timeoutDiv.className = 'timeout-warning';
+                    timeoutDiv.innerHTML = `⚠️ ${timeoutMessage}`;
+                    card.appendChild(timeoutDiv);
+                }
 
-                card.appendChild(section);
-            });
-        }
+                if (results.length === 0 && !timeoutMessage) {
+                    const noResults = document.createElement('div');
+                    noResults.textContent = '没有找到符合条件的分子式';
+                    card.appendChild(noResults);
+                } else {
+                    results.forEach(([category, items]) => {
+                        const section = document.createElement('div');
+                        section.innerHTML = `
+                            <div class="${getCategoryClass(category)} category-tag">${category}</div>
+                        `;
 
-        container.prepend(card);
-        while (container.children.length > 3) container.lastChild.remove();
-    }
+                        items.forEach(item => {
+                            const row = document.createElement('div');
+                            row.className = 'formula-row';
+                            row.innerHTML = `
+                                <div class="formula">${item.formula}</div>
+                                <div>
+                                    <div>理论值：${item.mass.toFixed(5)} Da</div>
+                                    <div>杂原子数：${item.heteroCount}</div>
+                                    <div class="error ${item.error >= 0 ? 'positive' : 'negative'}">
+                                        ${item.error >= 0 ? '+' : ''}${item.error.toFixed(5)} Da (${item.ppm} ppm)
+                                    </div>
+                                </div>
+                            `;
+                            section.appendChild(row);
+                        });
 
-    function getCategoryClass(category) {
-        return {
-            '卤素化合物': 'halogen',
-            '硫/磷化合物': 'sulfur-phosphor',
-            '含氮化合物': 'nitrogen',
-            'CHO化合物': 'cho',
-            '硼化合物': 'boron',
-            '其他化合物': 'other'
-        }[category];
-    }
-    </script>
-</body>
+                        card.appendChild(section);
+                    });
+                }
+
+                container.prepend(card);
+                while (container.children.length > 3) container.lastChild.remove();
+            }
+
+            function getCategoryClass(category) {
+                return {
+                    '卤素化合物': 'halogen',
+                    '硫/磷化合物': 'sulfur-phosphor',
+                    '含氮化合物': 'nitrogen',
+                    'CHO化合物': 'cho',
+                    '硼化合物': 'boron',
+                    '其他化合物': 'other'
+                }[category];
+            }
+        </script>
+    </body>
 </html>
