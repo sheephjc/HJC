@@ -109,6 +109,89 @@
                 width: 85%;
             }
         }
+        /* 弹窗背景遮罩 */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.4); /* 背景变暗一点点 */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    z-index: 1000;
+}
+
+/* 弹窗激活状态 */
+.modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* 弹窗主体（复用你的毛玻璃样式） */
+.modal-content {
+    position: relative;
+    width: 300px !important; /* 弹窗稍微窄一点，显得精致 */
+    padding: 30px !important;
+    transform: scale(0.8);
+    transition: all 0.3s ease;
+}
+
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+}
+
+/* 关闭按钮 */
+.close-btn {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    font-size: 24px;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* 工具列表样式 */
+.tools-list {
+    margin-top: 20px;
+    display: grid;
+    gap: 10px;
+}
+
+.tool-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    text-decoration: none;
+    color: white;
+    transition: background 0.2s;
+}
+
+.tool-item:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.tool-icon {
+    margin-right: 15px;
+    font-size: 1.2rem;
+}
+
+.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+h2 {
+    font-size: 1.4rem;
+    margin-bottom: 10px;
+    font-weight: 500;
+}
     </style>
 </head>
 <body>
@@ -120,7 +203,7 @@
 
         <div class="nav-links">
             <a href="little-alligator/index.html" class="btn">🐊 小鳄龙之家</a>
-            <a href="tools/index.html" class="btn">🛠️ 我的工具库</a>
+            <a href="javascript:void(0)" class="btn" onclick="openTools()">🛠️ 我的工具库</a>
         </div>
 
         <footer>
@@ -128,5 +211,32 @@
         </footer>
     </div>
 
+    <div id="toolsModal" class="modal-overlay" onclick="closeTools(event)">
+    <div class="modal-content glass-card" onclick="event.stopPropagation()">
+        <span class="close-btn" onclick="closeTools(event)">&times;</span>
+        <h2>工具箱</h2>
+        <div class="tools-list">
+            <a href="tools/MS.html" class="tool-item">
+                <span class="tool-icon">📝</span>
+                <span class="tool-name">MS 工具</span>
+            </a>
+            
+            <div class="tool-item disabled">
+                <span class="tool-icon">⏳</span>
+                <span class="tool-name">更多工具开发中...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 控制弹窗开关的简单脚本
+    function openTools() {
+        document.getElementById('toolsModal').classList.add('active');
+    }
+    function closeTools(e) {
+        document.getElementById('toolsModal').classList.remove('active');
+    }
+</script>
 </body>
 </html>
