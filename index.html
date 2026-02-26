@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HJC 的个人主页</title>
+
+    <link rel="icon" href="WS_trans.png" type="image/png">
+
     <style>
         * {
             margin: 0;
@@ -13,43 +16,38 @@
 
         body, html {
             height: 100%;
-            overflow: hidden; /* 防止视频溢出滚动 */
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
         }
 
-        /* 视频背景样式 */
-        #video-bg {
-            position: fixed;
-            right: 0;
-            bottom: 0;
-            min-width: 100%;
-            min-height: 100%;
-            width: auto;
-            height: auto;
-            z-index: -100;
-            object-fit: cover; /* 保证视频铺满全屏不拉伸 */
-        }
-
-        /* 主体居中容器 */
-        .wrapper {
+        /* 背景设置 */
+        body {
+            /* 确保文件名与仓库中完全一致（注意 jpeg/jpg 和大小写） */
+            background-image: url('红鸾樱落.jpg'); 
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            background-repeat: no-repeat;
+            
             display: flex;
-            justify-content: center;
             align-items: center;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.2); /* 给背景视频蒙上一层淡淡的黑色，增加文字可读性 */
+            
+            /* --- 关键修改：将卡片对齐到左侧 --- */
+            justify-content: flex-start; 
+            padding-left: 10%; /* 距离左边缘的距离 */
         }
 
-        /* 毛玻璃卡片 */
+        /* 高清晰度毛玻璃卡片 */
         .glass-card {
-            background: rgba(255, 255, 255, 0.15); /* 透明度 */
-            backdrop-filter: blur(15px); /* 模糊效果 */
-            -webkit-backdrop-filter: blur(15px);
+            background: rgba(255, 255, 255, 0.06); /* 极低不透明度，非常通透 */
+            backdrop-filter: blur(6px);            /* 适中的模糊度，不遮挡背景大轮廓 */
+            -webkit-backdrop-filter: blur(6px);
+            
             border: 1px solid rgba(255, 255, 255, 0.2);
             border-radius: 25px;
             padding: 40px;
-            width: 350px;
+            width: 340px;
             text-align: center;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
             color: white;
         }
 
@@ -58,14 +56,9 @@
             width: 100px;
             height: 100px;
             border-radius: 50%;
-            border: 3px solid rgba(255, 255, 255, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.4);
             margin-bottom: 20px;
             object-fit: cover;
-            transition: transform 0.3s ease;
-        }
-
-        .avatar:hover {
-            transform: scale(1.1) rotate(5deg);
         }
 
         h1 {
@@ -73,9 +66,9 @@
             margin-bottom: 30px;
             letter-spacing: 2px;
             font-weight: 500;
+            text-shadow: 1px 1px 5px rgba(0,0,0,0.2);
         }
 
-        /* 按钮功能区 */
         .nav-links {
             display: flex;
             flex-direction: column;
@@ -87,16 +80,17 @@
             text-decoration: none;
             color: white;
             background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
             transition: all 0.3s ease;
-            font-weight: 500;
+            font-size: 1rem;
         }
 
         .btn:hover {
-            background: rgba(255, 255, 255, 0.3);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            background: rgba(255, 255, 255, 0.25);
+            /* --- 动画微调：向右滑动一点 --- */
+            transform: translateX(5px); 
+            border-color: rgba(255, 255, 255, 0.5);
         }
 
         footer {
@@ -104,30 +98,34 @@
             font-size: 0.7rem;
             opacity: 0.6;
         }
+
+        /* 移动端适配：在手机上卡片依然居中显示 */
+        @media (max-width: 768px) {
+            body {
+                justify-content: center;
+                padding-left: 0;
+            }
+            .glass-card {
+                width: 85%;
+            }
+        }
     </style>
 </head>
 <body>
 
-    <video autoplay muted loop playsinline id="video-bg">
-        <source src="wallpaper3.mp4" type="video/mp4">
-        您的浏览器不支持 HTML5 视频。
-    </video>
+    <div class="glass-card">
+        <img src="Woodstock.png" alt="HJC" class="avatar">
+        
+        <h1>HJC</h1>
 
-    <div class="wrapper">
-        <div class="glass-card">
-            <img src="Woodstock.png" alt="HJC Avatar" class="avatar">
-            
-            <h1>HJC</h1>
-
-            <div class="nav-links">
-                <a href="little-alligator/index.html" class="btn">🐊 小鳄龙之家</a>
-                <a href="tools/index.html" class="btn">🛠️ 我的工具库</a>
-            </div>
-
-            <footer>
-                © 2026 HJC's Space
-            </footer>
+        <div class="nav-links">
+            <a href="little-alligator/index.html" class="btn">🐊 小鳄龙之家</a>
+            <a href="tools/index.html" class="btn">🛠️ 我的工具库</a>
         </div>
+
+        <footer>
+            © 2026 HJC'S SPACE
+        </footer>
     </div>
 
 </body>
