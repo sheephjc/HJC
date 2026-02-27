@@ -8,6 +8,17 @@
     <link rel="icon" href="WS_trans.png" type="image/png">
 
     <style>
+        /* 1. 定义淡入动画关键帧 */
+@keyframes pageFadeIn {
+    from { 
+        opacity: 0; 
+        filter: blur(10px); /* 初始状态带一点模糊，更有质感 */
+    }
+    to { 
+        opacity: 1; 
+        filter: blur(0); 
+    }
+}
         * {
             margin: 0;
             padding: 0;
@@ -34,8 +45,49 @@
             /* --- 关键修改：将卡片对齐到左侧 --- */
             justify-content: flex-start; 
             padding-left: 10%; /* 距离左边缘的距离 */
+            background-color: #2c3e50; /* [优化] 设置一个深色背景底色，图片加载出来前不至于一片惨白 */
+    
+    /* 2. 应用淡入动画：持续 1.5 秒，平滑过渡 */
+    animation: pageFadeIn 1.5s ease-out;
         }
+/* 3. 头像动态效果升级版 */
+.avatar {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    margin-bottom: 20px;
+    object-fit: cover;
+    
+    /* 核心：设置过渡时间及曲线 (bezier 曲线能产生弹性感) */
+    transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), 
+                border-color 0.4s, 
+                box-shadow 0.4s;
+    cursor: pointer;
+}
 
+.avatar:hover {
+    transform: scale(1.15) rotate(5deg); /* 放大并轻微旋转 */
+    border-color: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.4); /* 增加外发光 */
+}
+
+/* 4. [彩蛋] 让卡片也带一点点浮现动画，增加层次感 */
+.glass-card {
+    /* ... 之前的样式 ... */
+    animation: cardSlideIn 1.2s ease-out forwards;
+}
+
+@keyframes cardSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px); /* 从下方 20px 处浮上来 */
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
         /* 高清晰度毛玻璃卡片 */
         .glass-card {
             background: rgba(255, 255, 255, 0.06); /* 极低不透明度，非常通透 */
