@@ -8,17 +8,27 @@
     <link rel="icon" href="WS_trans2.png" type="image/png">
 
     <style>
-        /* 1. 定义淡入动画关键帧 */
-@keyframes pageFadeIn {
-    from { 
-        opacity: 0; 
-        filter: blur(10px); /* 初始状态带一点模糊，更有质感 */
-    }
-    to { 
-        opacity: 1; 
-        filter: blur(0); 
-    }
-}
+        /* --- 动画定义 --- */
+        
+        /* 全局背景纯透明度淡入 */
+        @keyframes simpleFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* 卡片从下方淡入并滑入 */
+        @keyframes slideUpFade {
+            from { 
+                opacity: 0; 
+                transform: translateY(30px); 
+            }
+            to { 
+                opacity: 1; 
+                transform: translateY(0); 
+            }
+        }
+
+        /* --- 基础样式 --- */
         * {
             margin: 0;
             padding: 0;
@@ -28,68 +38,32 @@
         body, html {
             height: 100%;
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            overflow: hidden; /* 防止动画时出现临时滚动条 */
         }
 
-        /* 背景设置 */
         body {
-            /* 确保文件名与仓库中完全一致（注意 jpeg/jpg 和大小写） */
+            /* 背景图设置 */
             background-image: url('红鸾樱落2.jpg'); 
             background-size: cover;
             background-position: center;
             background-attachment: fixed;
             background-repeat: no-repeat;
+            background-color: #2c3e50; /* 加载前的底色 */
             
             display: flex;
             align-items: center;
+            justify-content: flex-start; /* 卡片靠左 */
+            padding-left: 10%;
             
-            /* --- 关键修改：将卡片对齐到左侧 --- */
-            justify-content: flex-start; 
-            padding-left: 10%; /* 距离左边缘的距离 */
-            background-color: #2c3e50; /* [优化] 设置一个深色背景底色，图片加载出来前不至于一片惨白 */
-    
-    /* 2. 应用淡入动画：持续 1.5 秒，平滑过渡 */
-    animation: pageFadeIn 1.5s ease-out;
+            /* 应用平滑淡入动画 */
+            animation: simpleFadeIn 1.2s ease-in-out forwards;
         }
-/* 3. 头像动态效果升级版 */
-.avatar {
-    width: 100px;
-    height: 100px;
-    border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.4);
-    margin-bottom: 20px;
-    object-fit: cover;
-    
-    /* 核心：设置过渡时间及曲线 (bezier 曲线能产生弹性感) */
-    transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), 
-                border-color 0.4s, 
-                box-shadow 0.4s;
-    cursor: pointer;
-}
 
-.avatar:hover {
-    transform: scale(1.15) rotate(5deg); /* 放大并轻微旋转 */
-    border-color: rgba(255, 255, 255, 0.9);
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.4); /* 增加外发光 */
-}
-
-/* 4. [彩蛋] 让卡片也带一点点浮现动画，增加层次感 */
-
-
-@keyframes cardSlideIn {
-    from {
-        opacity: 0;
-        transform: translateY(20px); /* 从下方 20px 处浮上来 */
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-        /* 高清晰度毛玻璃卡片 */
+        /* --- 高清晰度毛玻璃卡片 --- */
         .glass-card {
-            background: rgba(255, 255, 255, 0.06); /* 极低不透明度，非常通透 */
-            backdrop-filter: blur(6px);            /* 适中的模糊度，不遮挡背景大轮廓 */
-            -webkit-backdrop-filter: blur(6px);
+            background: rgba(255, 255, 255, 0.06); 
+            backdrop-filter: blur(8px); /* 初始就带有模糊，不参与动画，防止闪烁 */
+            -webkit-backdrop-filter: blur(8px);
             
             border: 1px solid rgba(255, 255, 255, 0.2);
             border-radius: 25px;
@@ -98,10 +72,13 @@
             text-align: center;
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
             color: white;
-            animation: cardSlideIn 1.2s ease-out forwards;
+
+            /* 卡片延迟 0.3s 出现，增加视觉节奏感 */
+            opacity: 0;
+            animation: slideUpFade 0.8s ease-out 0.3s forwards;
         }
 
-        /* 圆形头像 */
+        /* --- 头像效果 --- */
         .avatar {
             width: 100px;
             height: 100px;
@@ -109,6 +86,17 @@
             border: 2px solid rgba(255, 255, 255, 0.4);
             margin-bottom: 20px;
             object-fit: cover;
+            /* 弹性交互效果 */
+            transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), 
+                        border-color 0.4s, 
+                        box-shadow 0.4s;
+            cursor: pointer;
+        }
+
+        .avatar:hover {
+            transform: scale(1.15) rotate(5deg);
+            border-color: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
         }
 
         h1 {
@@ -119,6 +107,7 @@
             text-shadow: 1px 1px 5px rgba(0,0,0,0.2);
         }
 
+        /* --- 按钮与导航 --- */
         .nav-links {
             display: flex;
             flex-direction: column;
@@ -138,8 +127,7 @@
 
         .btn:hover {
             background: rgba(255, 255, 255, 0.25);
-            /* --- 动画微调：向右滑动一点 --- */
-            transform: translateX(5px); 
+            transform: translateX(5px); /* 向右微滑 */
             border-color: rgba(255, 255, 255, 0.5);
         }
 
@@ -149,144 +137,117 @@
             opacity: 0.6;
         }
 
-        /* 移动端适配：在手机上卡片依然居中显示 */
-        @media (max-width: 768px) {
-            body {
-                justify-content: center;
-                padding-left: 0;
-            }
-            .glass-card {
-                width: 85%;
-            }
+        /* --- 弹窗样式 --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            z-index: 1000;
         }
-        /* 弹窗背景遮罩 */
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.4); /* 背景变暗一点点 */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    opacity: 0;
-    visibility: hidden;
-    transition: all 0.3s ease;
-    z-index: 1000;
-}
 
-/* 弹窗激活状态 */
-.modal-overlay.active {
-    opacity: 1;
-    visibility: visible;
-}
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
 
-/* 弹窗主体（复用你的毛玻璃样式） */
-.modal-content {
-    position: relative;
-    width: 300px !important; /* 弹窗稍微窄一点，显得精致 */
-    padding: 30px !important;
-    transform: scale(0.8);
-    transition: all 0.3s ease;
-}
+        .modal-content {
+            position: relative;
+            width: 300px !important;
+            padding: 30px !important;
+            transform: scale(0.8);
+            transition: all 0.3s ease;
+        }
 
-.modal-overlay.active .modal-content {
-    transform: scale(1);
-}
+        .modal-overlay.active .modal-content {
+            transform: scale(1);
+        }
 
-/* 关闭按钮 */
-.close-btn {
-    position: absolute;
-    top: 15px;
-    right: 20px;
-    font-size: 24px;
-    cursor: pointer;
-    color: rgba(255, 255, 255, 0.7);
-}
+        .close-btn {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 24px;
+            cursor: pointer;
+            color: rgba(255, 255, 255, 0.7);
+        }
 
-/* 工具列表样式 */
-.tools-list {
-    margin-top: 20px;
-    display: grid;
-    gap: 10px;
-}
+        .tools-list {
+            margin-top: 20px;
+            display: grid;
+            gap: 10px;
+        }
 
-.tool-item {
-    display: flex;
-    align-items: center;
-    padding: 12px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    text-decoration: none;
-    color: white;
-    transition: background 0.2s;
-}
+        .tool-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            text-decoration: none;
+            color: white;
+            transition: background 0.2s;
+        }
 
-.tool-item:hover {
-    background: rgba(255, 255, 255, 0.2);
-}
+        .tool-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
 
-.tool-icon {
-    margin-right: 15px;
-    font-size: 1.2rem;
-}
+        .tool-icon { margin-right: 15px; font-size: 1.2rem; }
+        .disabled { opacity: 0.5; cursor: not-allowed; }
+        h2 { font-size: 1.4rem; margin-bottom: 10px; font-weight: 500; }
 
-.disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-h2 {
-    font-size: 1.4rem;
-    margin-bottom: 10px;
-    font-weight: 500;
-}
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            body { justify-content: center; padding-left: 0; }
+            .glass-card { width: 85%; }
+        }
     </style>
 </head>
 <body>
 
     <div class="glass-card">
         <img src="Woodstock2.png" alt="HJC" class="avatar">
-        
         <h1>HJC</h1>
-
         <div class="nav-links">
             <a href="小鳄龙/index.html" class="btn">🐊 小鳄龙之家</a>
             <a href="javascript:void(0)" class="btn" onclick="openTools()">🛠️ 我的工具库</a>
         </div>
-
-        <footer>
-            © 2026 HJC'S SPACE
-        </footer>
+        <footer>© 2026 HJC'S SPACE</footer>
     </div>
 
     <div id="toolsModal" class="modal-overlay" onclick="closeTools(event)">
-    <div class="modal-content glass-card" onclick="event.stopPropagation()">
-        <span class="close-btn" onclick="closeTools(event)">&times;</span>
-        <h2>工具箱</h2>
-        <div class="tools-list">
-            <a href="tools/MS.html" class="tool-item" target="_blank">
-                <span class="tool-icon">🧪</span>
-                <span class="tool-name">高分辨质谱计算器</span>
-            </a>
-            
-            <div class="tool-item disabled">
-                <span class="tool-icon">⏳</span>
-                <span class="tool-name">更多工具开发中...</span>
+        <div class="modal-content glass-card" onclick="event.stopPropagation()">
+            <span class="close-btn" onclick="closeTools(event)">&times;</span>
+            <h2>工具箱</h2>
+            <div class="tools-list">
+                <a href="tools/MS.html" class="tool-item" target="_blank" rel="noopener noreferrer">
+                    <span class="tool-icon">🧪</span>
+                    <span class="tool-name">高分辨质谱计算器</span>
+                </a>
+                <div class="tool-item disabled">
+                    <span class="tool-icon">⏳</span>
+                    <span class="tool-name">更多工具开发中...</span>
+                </div>
             </div>
         </div>
     </div>
-</div>
 
-<script>
-    // 控制弹窗开关的简单脚本
-    function openTools() {
-        document.getElementById('toolsModal').classList.add('active');
-    }
-    function closeTools(e) {
-        document.getElementById('toolsModal').classList.remove('active');
-    }
-</script>
+    <script>
+        function openTools() {
+            document.getElementById('toolsModal').classList.add('active');
+        }
+        function closeTools(e) {
+            document.getElementById('toolsModal').classList.remove('active');
+        }
+    </script>
 </body>
 </html>
