@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>漳州麻将</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🀆</text></svg>">
+    <style>
+        :root {
+            --table-green: #1a5e20;
+            --tile-white: #ffffff;
+            --tile-back: #2e7d32;
+            --gold-color: #ffd700;
+            --tile-w: 4.6vw; --tile-h: 6.5vw;
+            --river-w: 2.2vw; --river-h: 3.2vw;
+        }
+        @media (min-width: 768px) {
+            :root { --tile-w: 36px; --tile-h: 50px; --river-w: 25px; --river-h: 35px; }
+        }
+        
+        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; user-select: none; }
+        #table { width: 100vw; height: 100vh; background: radial-gradient(circle, #2e7d32 0%, #154218 100%); position: relative; display: flex; justify-content: center; align-items: center; }
+        
+        /* 玩家区域 */
+        .player-area { position: absolute; display: flex; flex-direction: column; align-items: center; }
+        #p-bottom { bottom: 1vh; width: 100%; z-index: 10; }
+        #p-top { top: 1vh; transform: rotate(180deg); }
+        #p-left { left: 0.5vw; transform: rotate(90deg); }
+        #p-right { right: 0.5vw; transform: rotate(-90deg); }
+
+        /* 牌样式 */
+        .tile {
+            width: var(--tile-w); height: var(--tile-h);
+            background: var(--tile-white); border: 1px solid #999; border-radius: 3px;
+            display: inline-flex; justify-content: center; align-items: center;
+            font-size: calc(var(--tile-w) * 1.2); margin: 0.3px; box-shadow: 1px 1px 0 #bbb;
+            position: relative; transition: all 0.2s; cursor: pointer;
+        }
+        .tile.back { background: var(--tile-back); color: transparent; border: 1px solid #0d3b10; }
+        .tile.selected { transform: translateY(-15px); border: 2px solid #ff0; }
+        .tile.is-gold { border: 2px solid var(--gold-color); background: #fffdf0; }
+        .tile.is-gold::after { content: "金"; position: absolute; top: -1px; right: -1px; background: var(--gold-color); color: red; font-size: 8px; padding: 0 1px; transform: scale(0.7); font-weight: bold; }
+        
+        /* 新摸牌标记 */
+       .tile.new-draw { border: 2px solid #3498db; box-shadow: 0 0 8px #3498db; }
+
+        /* 牌河布局 */
+        .river { 
+            position: absolute; display: grid; 
+            grid-template-columns: repeat(12, var(--river-w)); /* 每行12张，极小化 */
+            grid-auto-rows: var(--river-h); gap: 1px; 
+        }
+        #river-bottom { bottom: 28%; left: 50%; transform: translateX(-50%); }
+        #river-top { top: 28%; left: 50%; transform: translateX(-50%) rotate(180deg); }
+        #river-left { left: 20%; top: 50%; transform: translateY(-50%) rotate(90deg); }
+        #river-right { right: 20%; top: 50%; transform: translateY(-50%) rotate(-90deg); }
+
+        .river-tile { 
+            width: var(--river-w); height: var(--river-h); 
+            background: #eee; border: 1px solid #aaa; border-radius: 1px;
+            display: flex; justify-content: center; align-items: center; font-size: calc(var(--river-w) * 1.2); 
+        }
+        
+        .revealed-zone { display: flex; justify-content: center; margin-bottom: 2px; min-height: 25px; }
+        .group { display: flex; margin: 0 2px; border: 0.5px solid rgba(255,255,255,0.2); }
+        .revealed-zone .tile { width: calc(var(--tile-w) * 0.7); height: calc(var(--tile-h) * 0.7); font-size: calc(var(--tile-w) * 1.0); }
+
+        /* 控制中心 */
+        #center-info { width: 70px; height: 70px; border: 1px solid rgba(255,255,255,0.3); border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 5; font-size: 9px; background: rgba(0,0,0,0.2); }
+        #gold-display { font-size: 20px; background: white; color: black; border-radius: 3px; padding: 1px 5px; margin-top: 2px; border: 2px solid gold; }
+
+        /* 动作按钮 */
+        #action-bar { position: absolute; bottom: 15vh; width: 100%; display: none; justify-content: center; gap: 8px; z-index: 100; }
+        .btn-act { width: 50px; height: 50px; border-radius: 50%; border: 2px solid white; background: #e74c3c; color: white; font-weight: bold; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    </style>
+</head>
+<body onclick="deselectAll()">
+
+<div id="table">
+    <div id="center-info">
+        <div id="rest-count">144</div>
+        <div id="gold-display">?</div>
+        <button onclick="event.stopPropagation(); initGame()" style="font-size:9px; margin-top:3px; cursor:pointer;">新开局</button>
+    </div>
+
+    <div id="river-top" class="river"></div>
+    <div id="river-bottom" class="river"></div>
+    <div id="river-left" class="river"></div>
+    <div id="river-right" class="river"></div>
+
+    <div id="p-top" class="player-area"><div class="hand" id="hand-top"></div><div class="revealed-zone" id="show-top"></div></div>
+    <div id="p-left" class="player-area"><div class="hand" id="hand-left"></div><div class="revealed-zone" id="show-left"></div></div>
+    <div id="p-right" class="player-area"><div class="hand" id="hand-right"></div><div class="revealed-zone" id="show-right"></div></div>
+    <div id="p-bottom" class="player-area"><div class="revealed-zone" id="show-bottom"></div><div id="hand-bottom" class="hand"></div></div>
+
+    <div id="action-bar"></div>
+</div>
+
+<script>
+    const TILE_TYPES = { W:0, T:1, S:2, Z:3, H:4 };
+    const MAHJONG_TILES = {
+        W: ['🀇','🀈','🀉','🀊','🀋','🀌','🀍','🀎','🀏'],
+        T: ['🀙','🀚','🀛','🀜','🀝','🀞','🀟','🀠','🀡'],
+        S: ['🀐','🀑','🀒','🀓','🀔','🀕','🀖','🀗','🀘'],
+        Z: ['🀀','🀁','🀂','🀃','🀄','🀅','🀆']
+    };
+
+    let state = {
+        deck: [], gold: null, turn: 0, dealer: 0,
+        players: [
+            { id: 'bottom', hand: [], river: [], show: [], lastDraw: null },
+            { id: 'right', hand: [], river: [], show: [], lastDraw: null },
+            { id: 'top', hand: [], river: [], show: [], lastDraw: null },
+            { id: 'left', hand: [], river: [], show: [], lastDraw: null }
+        ],
+        selectedIndex: -1, waitingAction: false, lastDiscard: null, currentActions: null
+    };
+
+    // 逻辑转换：白板代替金牌原始数值
+    function getLogic(tile) {
+        if (!tile) return null;
+        if(tile.char === '🀆' && ['W','T','S'].includes(state.gold.type)) {
+            return { ...state.gold, char: '🀆' }; // 逻辑属性变更为金牌
+        }
+        return tile;
+    }
+
+    // 排序函数：依据逻辑值排序
+    function sortHand(pIdx) {
+        state.players[pIdx].hand.sort((a, b) => {
+        // 如果 a 是金牌，b 不是，a 排前面 (-1)
+        if (a.char === state.gold.char && b.char !== state.gold.char) return -1;
+        // 如果 b 是金牌，a 不是，b 排前面 (1)
+        if (a.char !== state.gold.char && b.char === state.gold.char) return 1;
+
+        // 其余情况按逻辑值（白板代牌值）正常排序
+        const la = getLogic(a), lb = getLogic(b);
+        return (TILE_TYPES[la.type] - TILE_TYPES[lb.type]) || (la.val - lb.val);
+    });
+}
+
+    function initGame() {
+        let d = [];
+        for(let t in MAHJONG_TILES) MAHJONG_TILES[t].forEach((char, idx) => { for(let i=0; i<4; i++) d.push({char, type:t, val:idx, id: Math.random()}); });
+        ['🀢','🀣','🀤','🀥','🀦','🀧','🀨','🀩'].forEach((char, idx) => d.push({char, type:'H', val:idx, id: Math.random()}));
+        
+        state.deck = d.sort(() => Math.random() - 0.5);
+        let goldTile = state.deck.shift();
+        while(goldTile.type === 'H') { state.deck.push(goldTile); goldTile = state.deck.shift(); }
+        state.gold = goldTile;
+        document.getElementById('gold-display').innerText = state.gold.char;
+
+        state.players.forEach((p, idx) => {
+            p.hand = state.deck.splice(0, 16);
+            p.river = []; p.show = []; p.lastDraw = null;
+            handleFlowers(idx);
+        });
+
+        state.turn = state.dealer;
+        drawTile(state.turn); // 庄家领第17张
+        render();
+	sortHand(pIdx);
+    }
+
+    function drawTile(pIdx) {
+        if(state.deck.length === 0) return;
+        const p = state.players[pIdx];
+        // 清除上一个人的摸牌标记
+        state.players.forEach(pl => pl.lastDraw = null);
+        
+        const tile = state.deck.shift();
+        p.hand.push(tile);
+        p.lastDraw = tile; // 记录新摸的牌
+        
+        handleFlowers(pIdx);
+        if(pIdx === 0) checkSelfOptions();
+        else setTimeout(() => aiAction(pIdx), 800);
+    }
+
+    function handleFlowers(pIdx) {
+        let p = state.players[pIdx];
+        for (let i = p.hand.length - 1; i >= 0; i--) {
+            if (p.hand[i].type === 'H') {
+                p.show.push({type:'FLOWER', tiles:[p.hand.splice(i, 1)[0]]});
+                if(state.deck.length > 0) {
+                    const next = state.deck.shift();
+                    p.hand.push(next);
+                    if(pIdx === 0) p.lastDraw = next;
+                }
+                handleFlowers(pIdx);
+            }
+        }
+        sortHand(pIdx);
+    }
+
+    // 核心判定逻辑 (Hu, Chi, Peng, Gang)
+    function checkHu(hand, extra = null) {
+        let full = [...hand]; if(extra) full.push(extra);
+        let golds = full.filter(t => t.char === state.gold.char).length;
+        let others = full.filter(t => t.char !== state.gold.char).map(t => getLogic(t));
+        let counts = {};
+        others.forEach(t => { let k = t.type + t.val; counts[k] = (counts[k] || 0) + 1; });
+        let keys = Object.keys(counts);
+        for(let i = -1; i < keys.length; i++) {
+            let tempCounts = {...counts}; let needed = 0;
+            if(i === -1) { if(golds >= 2) needed = 2; else continue; } 
+            else {
+                let k = keys[i];
+                if(tempCounts[k] >= 2) tempCounts[k] -= 2;
+                else { tempCounts[k] -= 1; needed = 1; }
+            }
+            if(needed <= golds && canSearch(tempCounts, golds - needed)) return true;
+        }
+        return false;
+    }
+
+    function canSearch(counts, g) {
+        let keys = Object.keys(counts).filter(k => counts[k] > 0).sort();
+        if(keys.length === 0) return true;
+        let k = keys[0]; let type = k[0], val = parseInt(k.substring(1));
+        if(counts[k] >= 3) { counts[k] -= 3; if(canSearch(counts, g)) return true; counts[k] += 3; }
+        if(counts[k] >= 2 && g >= 1) { counts[k] -= 2; if(canSearch(counts, g - 1)) return true; counts[k] += 2; }
+        if(['W','T','S'].includes(type)) {
+            let k2 = type + (val+1), k3 = type + (val+2);
+            if(counts[k2] > 0 && counts[k3] > 0) {
+                counts[k]--; counts[k2]--; counts[k3]--; if(canSearch(counts, g)) return true;
+                counts[k]++; counts[k2]++; counts[k3]++;
+            }
+            if(g >= 1) {
+                if(counts[k2] > 0) { counts[k]--; counts[k2]--; if(canSearch(counts, g-1)) return true; counts[k]++; counts[k2]++; }
+                if(counts[k3] > 0) { counts[k]--; counts[k3]--; if(canSearch(counts, g-1)) return true; counts[k]++; counts[k3]++; }
+            }
+        }
+        if(g >= 2) { counts[k]--; if(canSearch(counts, g - 2)) return true; counts[k]++; }
+        return false;
+    }
+
+    function getActions(tile, isLeft) {
+        let res = { HU: checkHu(state.players[0].hand, tile), PENG: false, GANG: false, CHI: [] };
+        if(tile.char === state.gold.char) return res; // 金牌不能被吃碰杠
+        const hand = state.players[0].hand;
+        const count = hand.filter(t => t.char === tile.char).length;
+        if(count === 2) res.PENG = true;
+        if(count === 3) res.GANG = true;
+        if(isLeft && ['W','T','S'].includes(getLogic(tile).type)) {
+            const lt = getLogic(tile);
+            const vs = hand.filter(t => getLogic(t).type === lt.type).map(t => getLogic(t).val);
+            const v = lt.val;
+            if(vs.includes(v-2) && vs.includes(v-1)) res.CHI.push([v-2, v-1]);
+            if(vs.includes(v-1) && vs.includes(v+1)) res.CHI.push([v-1, v+1]);
+            if(vs.includes(v+1) && vs.includes(v+2)) res.CHI.push([v+1, v+2]);
+        }
+        return res;
+    }
+
+    function checkSelfOptions() {
+        const p = state.players[0];
+        let acts = { HU: checkHu(p.hand), AN_GANG: [], BU_GANG: [] };
+        let counts = {};
+        p.hand.forEach(t => { if(t.char !== state.gold.char) counts[t.char] = (counts[t.char]||0)+1; });
+        for(let c in counts) if(counts[c]===4) acts.AN_GANG.push(c);
+        p.hand.forEach(t => { if(p.show.some(g=>g.type==='PENG' && g.tiles[0].char===t.char)) acts.BU_GANG.push(t.char); });
+        if(acts.HU || acts.AN_GANG.length || acts.BU_GANG.length) showActionBar(acts);
+    }
+
+    function showActionBar(acts) {
+        state.currentActions = acts;
+        const bar = document.getElementById('action-bar');
+        bar.style.display = 'flex'; bar.innerHTML = '';
+        if(acts.HU) bar.innerHTML += `<div class="btn-act" onclick="execute('HU')">胡</div>`;
+        if(acts.GANG) bar.innerHTML += `<div class="btn-act" onclick="execute('GANG')">杠</div>`;
+        if(acts.PENG) bar.innerHTML += `<div class="btn-act" onclick="execute('PENG')">碰</div>`;
+        if(acts.CHI && acts.CHI.length > 0) bar.innerHTML += `<div class="btn-act" onclick="showChiChoices()">吃</div>`;
+        if(acts.AN_GANG?.length) bar.innerHTML += `<div class="btn-act" onclick="execute('AN_GANG')">暗</div>`;
+        if(acts.BU_GANG?.length) bar.innerHTML += `<div class="btn-act" onclick="execute('BU_GANG')">补</div>`;
+        bar.innerHTML += `<div class="btn-act" style="background:#7f8c8d" onclick="execute('PASS')">过</div>`;
+        state.waitingAction = true;
+    }
+
+    function showChiChoices() {
+        const bar = document.getElementById('action-bar');
+        bar.innerHTML = '';
+        state.currentActions.CHI.forEach(c => {
+            const btn = document.createElement('div'); btn.className = 'btn-act'; 
+            btn.style.borderRadius = '5px'; btn.style.width = 'auto'; btn.style.padding = '0 10px';
+            btn.innerText = c.map(v=>v+1).join('') + "万筒条"[TILE_TYPES[getLogic(state.lastDiscard).type]];
+            btn.onclick = () => execute('CHI', c);
+            bar.appendChild(btn);
+        });
+    }
+
+    function execute(type, data) {
+        const p = state.players[0];
+        document.getElementById('action-bar').style.display = 'none';
+        state.waitingAction = false;
+        if(type === 'HU') { alert("🎉 恭喜胡牌！"); initGame(); return; }
+        if(type === 'PASS') { nextTurn(); return; }
+
+        // 处理移除牌河
+        state.players[state.turn].river.pop();
+        let tiles = [state.lastDiscard];
+        if(type === 'CHI') {
+            data.forEach(v => {
+                let idx = p.hand.findIndex(t => getLogic(t).val === v && getLogic(t).type === getLogic(state.lastDiscard).type);
+                tiles.push(p.hand.splice(idx, 1)[0]);
+            });
+        } else if(type==='PENG'||type==='GANG') {
+            for(let i=0; i<(type==='PENG'?2:3); i++) tiles.push(p.hand.splice(p.hand.findIndex(t=>t.char===state.lastDiscard.char), 1)[0]);
+        }
+        p.show.push({type, tiles});
+        state.turn = 0; 
+        if(type==='GANG') drawTile(0); 
+        render();
+    }
+
+    function selectTile(idx) {
+        if(state.turn !== 0 || state.waitingAction) return;
+        if(state.players[0].hand[idx].char === state.gold.char) return; // 禁打金
+        if(state.selectedIndex === idx) {
+            state.lastDiscard = state.players[0].hand.splice(idx, 1)[0];
+            state.players[0].river.push(state.lastDiscard);
+            state.selectedIndex = -1;
+            nextTurn();
+        } else { state.selectedIndex = idx; render(); }
+    }
+
+   function nextTurn() {
+    // 检查是否有人可以 胡/杠/碰/吃 刚才打出的牌
+    // 优先级：胡 > 杠 > 碰 > 吃
+    let reacted = false;
+
+    // 轮询除出牌者外的其他 3 个玩家
+    for (let i = 1; i < 4; i++) {
+        let pIdx = (state.turn + i) % 4;
+        if (pIdx === 0) {
+            // 轮到真人玩家，检查是否有操作
+            let acts = getActions(state.lastDiscard, (state.turn === 3));
+            if (acts.HU || acts.PENG || acts.GANG || acts.CHI.length > 0) {
+                showActionBar(acts);
+                reacted = true;
+                break; 
+            }
+        } else {
+            // AI 玩家尝试响应
+            let aiAct = checkAIReaction(pIdx);
+            if (aiAct) {
+                executeAIAction(pIdx, aiAct.type, aiAct.data);
+                reacted = true;
+                break;
+            }
+        }
+    }
+
+    if (!reacted) {
+        // 如果没人响应，则下家摸牌
+        state.turn = (state.turn + 1) % 4;
+        if (state.turn === 0) drawTile(0);
+        else setTimeout(() => drawTile(state.turn), 500);
+    }
+    render();
+}
+
+    function aiAction(pIdx) {
+    const p = state.players[pIdx];
+    // 过滤掉金牌
+    let playable = p.hand.filter(t => t.char !== state.gold.char);
+    
+    // 找孤张：没有相同牌，且如果是万筒条，左右两边也没牌
+    let target = playable.find(t => {
+        const lt = getLogic(t);
+        const hasSame = playable.filter(ot => ot.char === t.char).length > 1;
+        if (hasSame) return false;
+        if (['W', 'T', 'S'].includes(lt.type)) {
+            const hasNeighbor = playable.some(ot => {
+                const lot = getLogic(ot);
+                return lot.type === lt.type && Math.abs(lot.val - lt.val) <= 2;
+            });
+            return !hasNeighbor;
+        }
+        return true; // 字牌孤张优先打
+    }) || playable[0]; // 如果没孤张，打第一张
+
+    const idx = p.hand.indexOf(target);
+    state.lastDiscard = p.hand.splice(idx, 1)[0];
+    p.river.push(state.lastDiscard);
+    p.lastDraw = null; 
+    
+    render();
+    nextTurn();
+}
+
+    function render() {
+        document.getElementById('rest-count').innerText = state.deck.length;
+        state.players.forEach((p, idx) => {
+            const h = document.getElementById(`hand-${p.id}`); h.innerHTML = '';
+            p.hand.forEach((t) => {
+                const div = document.createElement('div');
+    const isNew = p.lastDraw && t.id === p.lastDraw.id;
+    
+    // 逻辑：只有当 idx === 0 (你自己) 时，才显示 is-gold 和 new-draw
+    const goldClass = (idx === 0 && t.char === state.gold.char) ? 'is-gold' : '';
+    const drawClass = (idx === 0 && isNew) ? 'new-draw' : '';
+    
+    div.className = `tile ${idx === 0 ? '' : 'back'} ${goldClass} ${drawClass} ${idx === 0 && state.selectedIndex === p.hand.indexOf(t) ? 'selected' : ''}`;
+                div.innerText = (idx===0) ? t.char : '?';
+                if(idx===0) div.onclick = (e) => { e.stopPropagation(); selectTile(p.hand.indexOf(t)); };
+                h.appendChild(div);
+            });
+            document.getElementById(`show-${p.id}`).innerHTML = p.show.map(g => `<div class="group">${g.tiles.map(t=>`<div class="tile">${t.char}</div>`).join('')}</div>`).join('');
+            document.getElementById(`river-${p.id}`).innerHTML = p.river.map(t => `<div class="river-tile">${t.char}</div>`).join('');
+        });
+    }
+
+    function deselectAll() { state.selectedIndex = -1; render(); }
+    initGame();
+
+function checkAIReaction(pIdx) {
+    const p = state.players[pIdx];
+    const tile = state.lastDiscard;
+    const isLeft = ((state.turn + 1) % 4 === pIdx); // 是否是出牌人的下家
+
+    // 1. 优先检查胡牌 (AI 必胡)
+    if (checkHu(p.hand, tile)) return { type: 'HU' };
+
+    // 2. 检查杠/碰
+    // 简单 AI 策略：如果有三张就杠，有两张就碰（除非手牌快胡了，这里简化为必碰）
+    const count = p.hand.filter(t => t.char === tile.char).length;
+    if (count === 3 && tile.char !== state.gold.char) return { type: 'GANG' };
+    if (count === 2 && tile.char !== state.gold.char) return { type: 'PENG' };
+
+    // 3. 检查吃 (仅当下家时)
+    if (isLeft && ['W', 'T', 'S'].includes(getLogic(tile).type) && tile.char !== state.gold.char) {
+        const lt = getLogic(tile);
+        const vs = p.hand.map(t => getLogic(t)).filter(t => t.type === lt.type).map(t => t.val);
+        const v = lt.val;
+        // AI 简单逻辑：只要能吃就吃第一种方案
+        if (vs.includes(v - 2) && vs.includes(v - 1)) return { type: 'CHI', data: [v - 2, v - 1] };
+        if (vs.includes(v - 1) && vs.includes(v + 1)) return { type: 'CHI', data: [v - 1, v + 1] };
+        if (vs.includes(v + 1) && vs.includes(v + 2)) return { type: 'CHI', data: [v + 1, v + 2] };
+    }
+
+    return null; // 不响应
+}
+function executeAIAction(pIdx, type, data) {
+    const p = state.players[pIdx];
+    if (type === 'HU') {
+        alert(`玩家 ${pIdx} 胡牌了！`);
+        initGame();
+        return;
+    }
+
+    // 移除牌河里的牌
+    state.players[state.turn].river.pop();
+    let tiles = [state.lastDiscard];
+
+    if (type === 'CHI') {
+        data.forEach(v => {
+            let idx = p.hand.findIndex(t => getLogic(t).val === v && getLogic(t).type === getLogic(state.lastDiscard).type);
+            tiles.push(p.hand.splice(idx, 1)[0]);
+        });
+    } else {
+        let num = (type === 'PENG') ? 2 : 3;
+        for (let i = 0; i < num; i++) {
+            tiles.push(p.hand.splice(p.hand.findIndex(t => t.char === state.lastDiscard.char), 1)[0]);
+        }
+    }
+
+    p.show.push({ type, tiles });
+    state.turn = pIdx; // 回合转给这个 AI
+    sortHand(pIdx);
+    render();
+
+    if (type === 'GANG') {
+        setTimeout(() => drawTile(pIdx), 500); // 杠牌后补牌
+    } else {
+        setTimeout(() => aiAction(pIdx), 800); // 吃碰后直接出牌
+    }
+}
+</script>
+</body>
+</html>
