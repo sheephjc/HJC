@@ -117,7 +117,6 @@
 
         @keyframes big-shake { 0% { transform: translate(0,0); } 25% { transform: translate(-5px,5px); } 50% { transform: translate(5px,-5px); } 75% { transform: translate(-5px,-5px); } 100% { transform: translate(0,0); } }
         
-        @keyframes chui-feng-anim {
 	/* ===== 胡牌叠加特效系统 ===== */
 
 .hu-gold-pulse {
@@ -212,6 +211,7 @@
     50% { color: magenta; }
     100% { color: violet; }
 }
+        @keyframes chui-feng-anim {
             0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
             20% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
             80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
@@ -280,7 +280,7 @@ roundCount: 0,
             dealerDiscardCount: 0,
             targetChar: null,
             followCount: 0,
-            active: false
+            active: false,
 	 failed: false
         }
     };
@@ -471,59 +471,92 @@ function checkChuiFengLogic(pIdx, tileChar) {
         return found;
     }
 
-    function checkHuInfo(pIdx, extraTile = null, isSelfDraw = false, isGang = false, isFlower = false) {
-        const p = state.players[pIdx];
-        let fullHand = [...p.hand];
-        if (extraTile) fullHand.push(extraTile);
+function checkHuInfo(pIdx, extraTile = null, isSelfDraw = false, isGang = false, isFlower = false) {
+    const p = state.players[pIdx];
+    let fullHand = [...p.hand];
+    // 如果是别人打出的牌，先加入手牌模拟计算
+    if (extraTile) fullHand.push(extraTile);
 
-        let golds = fullHand.filter(t => t.char === state.gold.char).length;
-        let others = fullHand.filter(t => t.char !== state.gold.char).map(t => getLogic(t));
-        
-        let res = { canHu: false, types: [] };
+    // 统计金牌数量和非金牌对象
+    let golds = fullHand.filter(t => t.char === state.gold.char).length;
+    let others = fullHand.filter(t => t.char !== state.gold.char).map(t => getLogic(t));
+    
+    let res = { canHu: false, types: [] };
 
-        if (golds >= 3) {
-// ===== 双金只能自摸 =====
-if (golds >= 2 && !isSelfDraw) {
-    return res;
-}
-            res.canHu = true;
-            res.types.push("三金倒");
-            if (state.roundCount === 0) res.types.push(pIdx === state.dealer ? "天胡" : "地胡");
-            return res;
-        }
+    // ==========================================
+    // 【核心修复】强制规则：双金及以上必须自摸
+    // ==========================================
+    if (golds >= 2 && !isSelfDraw) {
+        return res; // 直接返回，不可接炮（点炮胡）
+    }
 
-
-        let counts = {};
-        others.forEach(t => { let k = t.type + t.val; counts[k] = (counts[k] || 0) + 1; });
-
-        if (canSearch({...counts}, golds - 1)) {
-            if (isSelfDraw) {
-                res.canHu = true;
-                if (golds === 1) res.types.push("游金");
-                else if (golds === 2) res.types.push("双游");
-            }
-        }
-
-        if (!res.canHu) {
-            let possible = false;
-            const keys = Object.keys(counts);
-            for(let k of keys) {
-                let temp = {...counts};
-                let gUsed = 0;
-                if(temp[k] >= 2) temp[k] -= 2; else { temp[k] -= 1; gUsed = 1; }
-                if(gUsed <= golds && canSearch(temp, golds - gUsed)) { possible = true; break; }
-            }
-            if(!possible && golds >= 2) { if(canSearch({...counts}, golds - 2)) possible = true; }
-            if(possible) res.canHu = true;
-        }
-
-        if (res.canHu) {
-            if (state.roundCount === 0) res.types.push(pIdx === state.dealer ? "天胡" : "地胡");
-            if (isGang) res.types.push("杠上开花");
-            if (isFlower) res.types.push("花开富贵");
-        }
+    // 1. 特殊牌型：三金倒 (三张金牌直接胡)
+    if (golds >= 3) {
+        res.canHu = true;
+        res.types.push("三金倒");
+        // 特殊开局判断
+        if (state.roundCount === 0) res.types.push(pIdx === state.dealer ? "天胡" : "地胡");
         return res;
     }
+
+    // 准备计算牌张频率
+    let counts = {};
+    others.forEach(t => { 
+        let k = t.type + t.val; 
+        counts[k] = (counts[k] || 0) + 1; 
+    });
+
+    // 2. 特殊牌型：游金 / 双游 (必须自摸)
+    // 逻辑：拿掉一张金牌后，剩下的牌依然能组成胡牌牌型（即“闲金”）
+    if (isSelfDraw && canSearch({...counts}, golds - 1)) {
+        res.canHu = true;
+        if (golds === 1) res.types.push("游金");
+        else if (golds === 2) res.types.push("双游");
+    }
+
+    // 3. 普通胡牌逻辑 (如果还没判定能胡，则进行标准拆解)
+    if (!res.canHu) {
+        let possible = false;
+        const keys = Object.keys(counts);
+        
+        // 尝试每一张牌作为“将对”的可能性
+        for(let k of keys) {
+            let temp = {...counts};
+            let gUsed = 0;
+            if(temp[k] >= 2) {
+                temp[k] -= 2; 
+            } else { 
+                temp[k] -= 1; 
+                gUsed = 1; // 用掉一张金牌当将
+            }
+
+            if(gUsed <= golds && canSearch(temp, golds - gUsed)) { 
+                possible = true; 
+                break; 
+            }
+        }
+        
+        // 如果手里的金牌够多（2张），且剩下的牌能成牌，也可以直接把两张金牌当将
+        if(!possible && golds >= 2) { 
+            if(canSearch({...counts}, golds - 2)) possible = true; 
+        }
+        
+        if(possible) res.canHu = true;
+    }
+
+    // 4. 汇总附加分值/番型
+    if (res.canHu) {
+        // 第一轮胡牌判定
+        if (state.roundCount === 0 && !res.types.includes("天胡") && !res.types.includes("地胡")) {
+            res.types.push(pIdx === state.dealer ? "天胡" : "地胡");
+        }
+        // 动作触发判定
+        if (isGang) res.types.push("杠上开花");
+        if (isFlower) res.types.push("花开富贵");
+    }
+
+    return res;
+}
 
     function canSearch(counts, g) {
         let keys = Object.keys(counts).filter(k => counts[k] > 0).sort();
@@ -1016,45 +1049,35 @@ function processActionQueue() {
         }
     }
 
+// 找到 checkAIReaction 函数，整体替换为以下内容
 function checkAIReaction(pIdx) {
     const p = state.players[pIdx];
     const tile = state.lastDiscard;
 
-    // 如果打出的是金牌，通常不允许吃碰杠
     if(tile.char === state.gold.char) return null;
 
-    // 1. 优先检查胡牌
+    // 1. 优先检查胡牌 (这里内部已调用修复过的 checkHuInfo)
     let hu = checkHuInfo(pIdx, tile, false);
     if (hu.canHu) return { type: 'HU', data: hu.types };
 
-    // 2. 检查杠与碰 (金牌不参与)
-    const count = p.hand.filter(t => t.char === tile.char).length;
+    // 【修复点 3】：排除金牌后再判断吃碰杠
+    const handWithoutGold = p.hand.filter(t => t.char !== state.gold.char);
+
+    const count = handWithoutGold.filter(t => t.char === tile.char).length;
     if (count === 3) return { type: 'GANG' };
     if (count === 2) return { type: 'PENG' };
 
-    // 3. 检查吃牌 (仅限下家，且必须是万筒条)
     const isNextPlayer = (state.turn + 1) % 4 === pIdx;
     const tileType = getLogic(tile).type;
     
     if (isNextPlayer && ['W', 'T', 'S'].includes(tileType)) {
         const lt = getLogic(tile);
-        // 获取手中同花色的所有数值
-        const vs = p.hand.map(t => getLogic(t))
-                         .filter(t => t.type === tileType && t.char !== state.gold.char)
-                         .map(t => t.val);
+        // 获取手中同花色且非金牌的数值
+        const vs = handWithoutGold.filter(t => getLogic(t).type === tileType).map(t => getLogic(t).val);
 
-        // 情况1：[n-2, n-1]
-        if (vs.includes(lt.val - 2) && vs.includes(lt.val - 1)) {
-            return { type: 'CHI', data: [lt.val - 2, lt.val - 1] };
-        }
-        // 情况2：[n-1, n+1]
-        if (vs.includes(lt.val - 1) && vs.includes(lt.val + 1)) {
-            return { type: 'CHI', data: [lt.val - 1, lt.val + 1] };
-        }
-        // 情况3：[n+1, n+2]
-        if (vs.includes(lt.val + 1) && vs.includes(lt.val + 2)) {
-            return { type: 'CHI', data: [lt.val + 1, lt.val + 2] };
-        }
+        if (vs.includes(lt.val - 2) && vs.includes(lt.val - 1)) return { type: 'CHI', data: [lt.val - 2, lt.val - 1] };
+        if (vs.includes(lt.val - 1) && vs.includes(lt.val + 1)) return { type: 'CHI', data: [lt.val - 1, lt.val + 1] };
+        if (vs.includes(lt.val + 1) && vs.includes(lt.val + 2)) return { type: 'CHI', data: [lt.val + 1, lt.val + 2] };
     }
 
     return null;
@@ -1263,26 +1286,32 @@ function aiAction(pIdx) {
     setTimeout(nextTurn, 400);
 }
 
-    function getReactionOptions(tile, canChi) {
-        let hu = checkHuInfo(0, tile, false);
-        let res = { HU: hu.canHu, PENG: false, GANG: false, CHI: [], huTypes: hu.types, isSelfDraw: false };
-        if(tile.char === state.gold.char) return res;
-        
-        const hand = state.players[0].hand;
-        const count = hand.filter(t => t.char === tile.char).length;
-        if(count >= 2) res.PENG = true;
-        if(count === 3) res.GANG = true;
-        
-        if(canChi && ['W','T','S'].includes(getLogic(tile).type)) {
-            const lt = getLogic(tile);
-            const vs = hand.filter(t => getLogic(t).type === lt.type).map(t => getLogic(t).val);
-            const v = lt.val;
-            if(vs.includes(v-2) && vs.includes(v-1)) res.CHI.push([v-2, v-1]);
-            if(vs.includes(v-1) && vs.includes(v+1)) res.CHI.push([v-1, v+1]);
-            if(vs.includes(v+1) && vs.includes(v+2)) res.CHI.push([v+1, v+2]);
-        }
-        return res;
+// 找到 getReactionOptions 函数，整体替换为以下内容
+function getReactionOptions(tile, canChi) {
+    let hu = checkHuInfo(0, tile, false);
+    let res = { HU: hu.canHu, PENG: false, GANG: false, CHI: [], huTypes: hu.types, isSelfDraw: false };
+    
+    // 如果打出的是金牌，或者自己没有反应，直接返回
+    if(tile.char === state.gold.char) return res;
+    
+    // 【修复点 2】：只在非金牌的手牌中寻找组合
+    const handWithoutGold = state.players[0].hand.filter(t => t.char !== state.gold.char);
+    
+    const count = handWithoutGold.filter(t => t.char === tile.char).length;
+    if(count >= 2) res.PENG = true;
+    if(count === 3) res.GANG = true;
+    
+    if(canChi && ['W','T','S'].includes(getLogic(tile).type)) {
+        const lt = getLogic(tile);
+        // 同样，吃牌的候选牌也必须排除金牌
+        const vs = handWithoutGold.filter(t => getLogic(t).type === lt.type).map(t => getLogic(t).val);
+        const v = lt.val;
+        if(vs.includes(v-2) && vs.includes(v-1)) res.CHI.push([v-2, v-1]);
+        if(vs.includes(v-1) && vs.includes(v+1)) res.CHI.push([v-1, v+1]);
+        if(vs.includes(v+1) && vs.includes(v+2)) res.CHI.push([v+1, v+2]);
     }
+    return res;
+}
 
 function render() {
     // 1. 更新余牌显示
