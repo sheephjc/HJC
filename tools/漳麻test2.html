@@ -157,6 +157,39 @@
     background: radial-gradient(circle, rgba(33,150,243,0.4), rgba(0,0,0,0.95));
 }
 
+.win-mark {
+    box-shadow: 0 0 25px gold !important;
+    border: 2px solid gold !important;
+}
+
+.lose-mark {
+    box-shadow: 0 0 25px red !important;
+    border: 2px solid red !important;
+}
+
+.result-text {
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 40px;
+    font-weight: 900;
+    color: gold;
+    text-shadow: 0 0 15px orange, 2px 2px 0 black;
+    pointer-events: none;
+    animation: resultPop 0.6s ease-out;
+}
+
+.lose-text {
+    color: red;
+    text-shadow: 0 0 15px darkred, 2px 2px 0 black;
+}
+
+@keyframes resultPop {
+    0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
 @keyframes goldPulse {
     0% { text-shadow: 0 0 10px gold; }
     50% { text-shadow: 0 0 30px gold; }
@@ -231,6 +264,7 @@
     let state = {
         deck: [], gold: null, turn: 0, dealer: 0,
 actionQueue: [], // 新增：用于存放待处理的玩家响应
+winnerInfo: null,
 dealerStreak: 0,
 roundCount: 0,
         scores: [0, 0, 0, 0],
@@ -247,6 +281,7 @@ roundCount: 0,
             targetChar: null,
             followCount: 0,
             active: false
+	 failed: false
         }
     };
 
@@ -294,7 +329,18 @@ function renderScores() {
         scoreEl.innerText = Math.floor(s);
     });
 }
-    function initGame() {
+function initGame() {
+state.winnerInfo = null;
+document.querySelectorAll(".result-text").forEach(el => el.remove());
+    // ===== 重置所有动作状态 =====
+    state.waitingAction = false;
+    state.currentActions = null;
+    state.actionQueue = [];
+    state.qiangGangPending = null;
+
+    const bar = document.getElementById('action-bar');
+    bar.innerHTML = '';
+    bar.style.display = 'none';
         state.chuiFeng = { dealerDiscardCount: 0, targetChar: null, followCount: 0, active: false };
         state.isGameOver = false;
         document.getElementById('hu-overlay').style.display = 'none';
@@ -324,28 +370,45 @@ function renderScores() {
         renderScores();
     }
 
-    function checkChuiFengLogic(pIdx, tileChar) {
-        if (pIdx === state.dealer) {
-            state.chuiFeng.dealerDiscardCount++;
-            if (state.chuiFeng.dealerDiscardCount <= 2) {
-                state.chuiFeng.targetChar = tileChar;
-                state.chuiFeng.followCount = 1;
-                state.chuiFeng.active = true;
-            } else {
-                state.chuiFeng.active = false;
-            }
-        } else if (state.chuiFeng.active) {
-            if (tileChar === state.chuiFeng.targetChar) {
-                state.chuiFeng.followCount++;
-                if (state.chuiFeng.followCount === 4) {
-                    executeChuiFengSettlement();
-                    state.chuiFeng.active = false;
-                }
-            } else {
-                state.chuiFeng.active = false;
-            }
+function checkChuiFengLogic(pIdx, tileChar) {
+
+    // 庄家出前两手
+    if (pIdx === state.dealer) {
+
+        state.chuiFeng.dealerDiscardCount++;
+
+        if (state.chuiFeng.dealerDiscardCount <= 2) {
+
+            state.chuiFeng.targetChar = tileChar;
+            state.chuiFeng.followCount = 1;
+            state.chuiFeng.active = true;
+            state.chuiFeng.failed = false;
+
+        } else {
+            state.chuiFeng.active = false;
         }
+
+        return;
     }
+
+    // 闲家阶段
+    if (!state.chuiFeng.active || state.chuiFeng.failed) return;
+
+    if (tileChar === state.chuiFeng.targetChar) {
+
+        state.chuiFeng.followCount++;
+
+        if (state.chuiFeng.followCount === 4) {
+            executeChuiFengSettlement();
+            state.chuiFeng.active = false;
+        }
+
+    } else {
+        // 🔥 有人没跟，直接失败
+        state.chuiFeng.failed = true;
+        state.chuiFeng.active = false;
+    }
+}
 
     function executeChuiFengSettlement() {
         state.scores[state.dealer] -= 3;
@@ -419,13 +482,16 @@ function renderScores() {
         let res = { canHu: false, types: [] };
 
         if (golds >= 3) {
+// ===== 双金只能自摸 =====
+if (golds >= 2 && !isSelfDraw) {
+    return res;
+}
             res.canHu = true;
             res.types.push("三金倒");
             if (state.roundCount === 0) res.types.push(pIdx === state.dealer ? "天胡" : "地胡");
             return res;
         }
 
-        if (golds >= 2 && !isSelfDraw && !extraTile) return res; 
 
         let counts = {};
         others.forEach(t => { let k = t.type + t.val; counts[k] = (counts[k] || 0) + 1; });
@@ -493,7 +559,11 @@ function renderScores() {
     }
 
 function settle(winnerIdx, loserIdx, isSelfDraw, specialTypes = []) {
-
+	state.winnerInfo = {
+    winner: winnerIdx,
+    loser: isSelfDraw ? null : loserIdx,
+    isSelfDraw: isSelfDraw
+};
     state.isGameOver = true;
     render();
 
@@ -697,31 +767,32 @@ if (state.dealerStreak >= 2) {
 
 // 抢杠胡检查：gangerIdx 是谁在杠，tileChar 是杠的那张牌，isAnGang 是否是暗杠
 function checkQiangGang(gangerIdx, tileChar, isAnGang) {
+
     const tile = { char: tileChar };
-    // 检查除杠牌者外的其他三家
+
     for (let i = 1; i < 4; i++) {
         let pIdx = (gangerIdx + i) % 4;
-        
-        // 调用你现有的胡牌检查函数 (假设为 checkHu)
-        if (checkHu(pIdx, tile)) {
+
+        // ❗用正确的胡牌检测函数
+        let huInfo = checkHuInfo(pIdx, tile, false, false, false);
+
+        if (huInfo.canHu) {
+
             if (pIdx === 0) {
-                // 如果是玩家可以抢，弹出动作条，并暂存杠牌信息
+                // 玩家抢杠
                 state.waitingAction = true;
                 state.qiangGangPending = { gangerIdx, char: tileChar, isAnGang };
                 showActionBar({ HU: true });
-                console.log("拦截到抢杠胡机会！来自玩家");
-                return true; 
+                return true;
             } else {
-                // 如果是 AI 可以抢（AI 默认有胡必胡）
-                console.log(`AI玩家 ${pIdx} 抢杠胡了！`);
-                // 抢杠胡结算：赢家 pIdx, 输家 gangerIdx, 非自摸, 类型抢杠胡
+                // AI 抢杠
                 settle(pIdx, gangerIdx, false, ["抢杠胡"]);
                 return true;
             }
         }
     }
-    return false; // 无人抢杠
-}
+    return false;
+}    
 
     function showActionBar(acts) {
         state.currentActions = acts;
@@ -795,38 +866,22 @@ function execute(type, data) {
     playActionEffect(0, typeMap[type] || type);
 
     // 暗杠或补杠
-    if (type === 'AN_GANG' || type === 'BU_GANG') {
-        let char = data || (type === 'AN_GANG' ? state.currentActions.AN_GANG[0] : state.currentActions.BU_GANG[0]);
-// --- 新增：抢杠胡拦截检查 ---
-    // 如果返回 true，说明有人能胡，函数直接返回，不执行后面的扣牌逻辑
-    if (checkQiangGang(0, char, type === 'AN_GANG')) return;
-    
-    // 如果无人拦截，则执行真正的杠牌（我把这部分抽离成 finishGang 函数，方便复用）
-    completeGangLogic(0, char, type === 'AN_GANG');
-    return;        
+if (type === 'AN_GANG' || type === 'BU_GANG') {
 
-        if (type === 'AN_GANG') {
-            // 暗杠不需要抢杠检测，直接扣牌
-            let tiles = p.hand.filter(t => t.char === char);
-            p.hand = p.hand.filter(t => t.char !== char);
-            p.show.push({ type: 'AN_GANG', tiles: tiles });
-            immediateScore(0, true);
-        } else {
-            // 补杠
-            if (checkQiangGang(0, char)) return; // 补杠可以被抢杠胡
-            let g = p.show.find(group => group.type === 'PENG' && group.tiles[0].char === char);
-            let idx = p.hand.findIndex(t => t.char === char);
-            g.tiles.push(p.hand.splice(idx, 1)[0]);
-            g.type = 'BU_GANG';
-            immediateScore(0, false);
-        }
-        state.actionQueue = []; // 【添加在这里】执行了杠牌，后续动作清空
-        state.currentActions = null;
-        sortHand(0); 
-        render();
-        setTimeout(() => drawTile(0, true), 500); 
-        return;
-    }
+    let char = data || 
+        (type === 'AN_GANG' ? state.currentActions.AN_GANG[0] : state.currentActions.BU_GANG[0]);
+
+    // 抢杠胡检测（暗杠也允许被抢）
+    if (checkQiangGang(0, char, type === 'AN_GANG')) return;
+
+    // 真正执行杠
+    completeGangLogic(0, char, type === 'AN_GANG');
+
+    state.actionQueue = [];
+    state.currentActions = null;
+
+    return;
+}
 
     // 吃、碰、大明杠逻辑
     state.players[state.turn].river.pop();
@@ -894,6 +949,7 @@ function completeGangLogic(pIdx, char, isAnGang) {
         immediateScore(pIdx, false); // 补杠分
     }
     state.currentActions = null;
+state.waitingAction = false;
     sortHand(pIdx);
     render();
     setTimeout(() => drawTile(pIdx, true), 500); // 杠完摸最后一张
@@ -1077,56 +1133,135 @@ function executeAIAction(pIdx, type, data) {
         renderScores(); 
     }
 
-    function aiAction(pIdx) {
-        if(state.isGameOver || state.turn !== pIdx) return;
-        const p = state.players[pIdx];
-        let playable = p.hand.filter(t => t.char !== state.gold.char);
-        if (playable.length === 0) playable = [p.hand[0]];
+function aiAction(pIdx) {
+    if (state.isGameOver || state.turn !== pIdx) return;
 
-        let bestTileToDiscard = null;
+    const p = state.players[pIdx];
 
-        if (pIdx !== state.dealer && state.chuiFeng.active) {
-            const chuiFengTile = playable.find(t => t.char === state.chuiFeng.targetChar);
-            if (chuiFengTile) {
-                bestTileToDiscard = chuiFengTile;
+    // =========================
+    // 1. 自摸胡判断
+    // =========================
+    let huInfo = checkHuInfo(pIdx, null, true);
+    if (huInfo.canHu) {
+        settle(pIdx, pIdx, true, huInfo.types);
+        return;
+    }
+
+    // =========================
+    // 2. 暗杠判断
+    // =========================
+    let countMap = {};
+    p.hand.forEach(t => {
+        if (t.char !== state.gold.char) {
+            countMap[t.char] = (countMap[t.char] || 0) + 1;
+        }
+    });
+
+    for (let char in countMap) {
+        if (countMap[char] === 4) {
+            if (checkQiangGang(pIdx, char, true)) return;
+            completeGangLogic(pIdx, char, true);
+            return;
+        }
+    }
+
+    // =========================
+    // 3. 补杠判断
+    // =========================
+    for (let group of p.show) {
+        if (group.type === 'PENG') {
+            let char = group.tiles[0].char;
+            let idx = p.hand.findIndex(t => t.char === char);
+            if (idx !== -1) {
+                if (checkQiangGang(pIdx, char, false)) return;
+                completeGangLogic(pIdx, char, false);
+                return;
             }
         }
+    }
 
-        if (!bestTileToDiscard) {
-            let maxScrapValue = -1;
-            playable.forEach(tile => {
-                let scrapValue = 0;
-                const lt = getLogic(tile);
-                if (lt.type === 'Z') {
-                    const count = p.hand.filter(t => t.char === tile.char).length;
-                    if (count === 1) scrapValue += 50; 
-                    else if (count === 2) scrapValue -= 20;
-                } else {
-                    const count = p.hand.filter(t => t.char === tile.char).length;
-                    if (count >= 2) scrapValue -= 30;
-                    const hasNeighbor1 = p.hand.some(t => getLogic(t).type === lt.type && Math.abs(getLogic(t).val - lt.val) === 1);
-                    const hasNeighbor2 = p.hand.some(t => getLogic(t).type === lt.type && Math.abs(getLogic(t).val - lt.val) === 2);
-                    if (!hasNeighbor1 && !hasNeighbor2) scrapValue += 40; 
-                    else if (hasNeighbor1) scrapValue -= 15;
-                    if (lt.val === 0 || lt.val === 8) scrapValue += 5;
-                }
-                if (scrapValue > maxScrapValue) {
-                    maxScrapValue = scrapValue;
-                    bestTileToDiscard = tile;
-                }
-            });
+    // =========================
+    // 4. 进入出牌逻辑
+    // =========================
+    let playable = p.hand.filter(t => t.char !== state.gold.char);
+    if (playable.length === 0) playable = [p.hand[0]];
+
+    // =========================
+    // 强制吹风跟牌系统（严格规则版）
+    // =========================
+    if (state.chuiFeng.active && !state.chuiFeng.failed) {
+        const target = state.chuiFeng.targetChar;
+        const canFollow = p.hand.find(t => t.char === target);
+
+        // 能跟必须跟
+        if (canFollow) {
+            const idx = p.hand.indexOf(canFollow);
+            state.lastDiscard = p.hand.splice(idx, 1)[0];
+            p.river.push(state.lastDiscard);
+
+            checkChuiFengLogic(pIdx, state.lastDiscard.char);
+            p.lastDraw = null;
+
+            render();
+            setTimeout(nextTurn, 400);
+            return; // 强制结束本回合
         }
 
-        const idx = p.hand.indexOf(bestTileToDiscard);
-        state.lastDiscard = p.hand.splice(idx, 1)[0];
-        p.river.push(state.lastDiscard);
-        
-        checkChuiFengLogic(pIdx, state.lastDiscard.char);
-
-        p.lastDraw = null; 
-        render();
-        setTimeout(nextTurn, 400);
+        // 有人没跟 → 吹风失败
+        state.chuiFeng.failed = true;
+        state.chuiFeng.active = false;
     }
+
+    // =========================
+    // 正常AI出牌评估系统
+    // =========================
+    let bestTile = null;
+    let maxScrap = -999;
+
+    playable.forEach(tile => {
+        let scrap = 0;
+        const lt = getLogic(tile);
+        const sameCount = p.hand.filter(t => t.char === tile.char).length;
+
+        // 拆对子严重扣分
+        if (sameCount >= 2) scrap -= 40;
+
+        if (lt.type === 'Z') {
+            if (sameCount === 1) scrap += 50;
+        } else {
+            const has1 = p.hand.some(t =>
+                getLogic(t).type === lt.type &&
+                Math.abs(getLogic(t).val - lt.val) === 1
+            );
+
+            const has2 = p.hand.some(t =>
+                getLogic(t).type === lt.type &&
+                Math.abs(getLogic(t).val - lt.val) === 2
+            );
+
+            if (!has1 && !has2) scrap += 40;
+            if (lt.val === 0 || lt.val === 8) scrap += 10;
+        }
+
+        if (scrap > maxScrap) {
+            maxScrap = scrap;
+            bestTile = tile;
+        }
+    });
+
+    // =========================
+    // 执行出牌
+    // =========================
+    const idx = p.hand.indexOf(bestTile);
+    state.lastDiscard = p.hand.splice(idx, 1)[0];
+    p.river.push(state.lastDiscard);
+
+    checkChuiFengLogic(pIdx, state.lastDiscard.char);
+    p.lastDraw = null;
+
+    render();
+    setTimeout(nextTurn, 400);
+}
 
     function getReactionOptions(tile, canChi) {
         let hu = checkHuInfo(0, tile, false);
@@ -1161,6 +1296,21 @@ function render() {
 
     // 3. 渲染每个玩家的牌
     state.players.forEach((p, idx) => {
+// ===== 胜负标记 =====
+if (state.winnerInfo) {
+
+    const area = document.getElementById(`p-${p.id}`);
+    area.classList.remove("win-mark", "lose-mark");
+
+    if (idx === state.winnerInfo.winner) {
+        area.classList.add("win-mark");
+    }
+
+    if (!state.winnerInfo.isSelfDraw &&
+        idx === state.winnerInfo.loser) {
+        area.classList.add("lose-mark");
+    }
+}
         // 渲染手牌
         const h = document.getElementById(`hand-${p.id}`); 
         if (!h) return;
@@ -1200,6 +1350,7 @@ function render() {
 
     // 4. 每次渲染都检查庄家标识是否正确
     renderScores();
+	renderWinText();
 }
 
     function deselectAll() { state.selectedIndex = -1; render(); }
@@ -1284,6 +1435,40 @@ function startHuParticles(typeList, flowerCount) {
 function stopHuParticles() {
     if (huAnimationFrame) cancelAnimationFrame(huAnimationFrame);
 }
+
+function renderWinText() {
+
+    // 先清空旧文字
+    document.querySelectorAll(".result-text").forEach(el => el.remove());
+
+    if (!state.winnerInfo) return;
+
+    const winner = state.winnerInfo.winner;
+    const loser = state.winnerInfo.loser;
+    const isSelfDraw = state.winnerInfo.isSelfDraw;
+
+    state.players.forEach((p, idx) => {
+
+        const area = document.getElementById(`p-${p.id}`);
+        if (!area) return;
+
+        if (idx === winner) {
+
+            const text = document.createElement("div");
+            text.className = "result-text";
+            text.innerText = isSelfDraw ? "自摸" : "胡牌";
+            area.appendChild(text);
+
+        } else if (!isSelfDraw && idx === loser) {
+
+            const text = document.createElement("div");
+            text.className = "result-text lose-text";
+            text.innerText = "点炮 👎🏻";
+            area.appendChild(text);
+        }
+    });
+}
+
     window.onload = initGame;
 </script>
 </body>
