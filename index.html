@@ -207,8 +207,26 @@
 
         /* 移动端适配 */
         @media (max-width: 768px) {
-            body { justify-content: center; padding-left: 0; }
-            .glass-card { width: 85%; }
+            body {
+                justify-content: center;
+                padding-left: 0;
+                animation: none;
+            }
+
+            .glass-card {
+                width: 85%;
+                opacity: 1;
+                animation: none;
+            }
+
+            .modal-overlay,
+            .modal-content {
+                transition: none;
+            }
+
+            .modal-content {
+                transform: none;
+            }
         }
     </style>
 </head>
