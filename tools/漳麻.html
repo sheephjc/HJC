@@ -13,6 +13,9 @@
             --gold-color: #ffd700;
             --tile-w: 4.2vw; --tile-h: 6vw;
             --river-w: 2.2vw; --river-h: 3.2vw;
+            --chi-option-tile-w: var(--tile-w);
+            --chi-option-tile-h: var(--tile-h);
+            --chi-option-font-scale: 1;
         }
         @media (min-width: 768px) {
             :root { --tile-w: 38px; --tile-h: 52px; --river-w: 26px; --river-h: 36px; }
@@ -92,11 +95,20 @@
         #action-bar { position: absolute; bottom: 18vh; width: 100%; display: none; justify-content: center; gap: 15px; z-index: 100; }
         .btn-act { width: 64px; height: 64px; border-radius: 50%; border: 3px solid white; background: linear-gradient(#f39c12, #e67e22); color: white; font-weight: bold; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
         .btn-act:active { transform: scale(0.9); }
-        .chi-option-btn { width: auto; min-width: 122px; height: 62px; border-radius: 14px; padding: 0 10px; }
-        .chi-option-tiles { display: flex; align-items: center; justify-content: center; gap: 3px; }
+        .chi-option-btn {
+            width: auto;
+            min-width: calc(var(--chi-option-tile-w) * 3 + 18px);
+            height: calc(var(--chi-option-tile-h) + 10px);
+            border-radius: 12px;
+            padding: 4px 8px;
+        }
+        .chi-option-tiles { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 4px; }
         .chi-option-tile {
-            width: 24px; height: 34px; border-radius: 3px; border: 1px solid #999; background: #fff; color: #000;
-            font-size: 22px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+            box-sizing: border-box;
+            width: var(--chi-option-tile-w);
+            height: var(--chi-option-tile-h);
+            border-radius: 3px; border: 1px solid #999; background: #fff; color: #000;
+            font-size: calc(var(--chi-option-tile-w) * var(--chi-option-font-scale)); line-height: 1; display: inline-flex; align-items: center; justify-content: center;
             box-shadow: 1px 1px 0 #bbb;
         }
         .chi-option-tile.is-gold { border: 2px solid var(--gold-color); background: #fffdf0; }
@@ -120,6 +132,7 @@
         #hu-score-text { color: #2ecc71; font-size: 44px; font-weight: bold; margin-top: 10px; }
 
         .btn-ui { font-size: 11px; padding: 3px 8px; cursor: pointer; background: #444; color: #fff; border: 1px solid #666; border-radius: 3px; margin: 2px; }
+        #mobile-game-bar { display: none; }
         
         /* 不同胡牌类型的特殊样式 */
         .hu-gold { text-shadow: 0 0 30px #ffd700, 0 0 60px #ffd700 !important; color: #fff !important; }
@@ -341,31 +354,64 @@
     background: #1a5e20;
     border: 2px solid #ffd700;
     border-radius: 12px;
-    padding: 25px;
     max-width: 700px;
     width: 90%;
     max-height: 80vh;
-    overflow-y: auto;
+    overflow: hidden;
     color: white;
     position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.rule-header {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: #1a5e20;
+    border-bottom: 1px solid rgba(255,215,0,0.3);
+    padding: 12px 52px 10px 20px;
+    text-align: center;
+    flex: 0 0 auto;
+}
+
+.rule-header h3 {
+    margin: 0;
+    color: #ffd700;
+    text-align: center;
+    border: none;
+    padding: 0;
+}
+
+.rule-body {
+    overflow-y: auto;
     line-height: 1.6;
+    padding: 18px 25px 22px;
+    min-height: 0;
+}
+
+.rule-body > p:last-child {
+    margin-bottom: 0;
+}
+
+.rule-body > :first-child {
+    margin-top: 0;
 }
 
 .rule-content h3 {
-    margin-top: 0;
-    color: #ffd700;
-    text-align: center;
-    border-bottom: 1px solid rgba(255,215,0,0.3);
-    padding-bottom: 10px;
+    line-height: 1.6;
 }
 
 .close-rule {
     position: absolute;
-    top: 10px;
+    top: 50%;
     right: 15px;
+    transform: translateY(-50%);
+    z-index: 3;
     font-size: 24px;
     cursor: pointer;
     color: #ffd700;
+    user-select: none;
 }
 
 .rule-section {
@@ -420,62 +466,85 @@ margin-bottom:6px;
 
 /* 手机竖屏优化：放大自己的手牌，并把东西家外移 */
 @media (max-width: 767px) and (orientation: portrait) {
+    :root {
+        --mobile-bottom-hand-w: 88vw;
+        --mobile-bottom-hand-gap: 1px;
+        --mobile-bottom-tile-w: clamp(26px, calc((var(--mobile-bottom-hand-w) - (9 * var(--mobile-bottom-hand-gap))) / 10), 38px);
+        --chi-option-tile-w: var(--mobile-bottom-tile-w);
+        --chi-option-tile-h: calc(var(--mobile-bottom-tile-w) * 1.42);
+        --chi-option-font-scale: 1.08;
+        --river-w: 3.8vw;
+        --river-h: 5.4vw;
+    }
+
     #p-bottom {
-        bottom: 2.4vh;
-        width: 86vw;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 9.5vh);
+        width: var(--mobile-bottom-hand-w);
     }
 
     #p-top {
-        top: 8.5vh;
+        top: calc(env(safe-area-inset-top, 0px) + 16vh);
         width: 86vw;
     }
 
     .left-top-panel {
-        top: 8px;
+        top: calc(env(safe-area-inset-top, 0px) + 20px);
         left: 0;
         right: 0;
         width: 100%;
-        padding: 0 8px;
+        padding: 0 10px;
         box-sizing: border-box;
         flex-direction: row;
-        justify-content: center;
+        justify-content: space-between;
         align-items: center;
-        gap: 6px;
+        gap: 4px;
     }
 
     .author-tag {
-        font-size: 10px;
+        font-size: 12px;
         letter-spacing: 1px;
-        padding: 4px 7px;
+        padding: 5px 8px;
         border-left-width: 2px;
         margin-bottom: 0;
         white-space: nowrap;
+        flex: 0 0 auto;
     }
 
     .ui-box {
-        font-size: 8px;
+        font-size: 10px;
         letter-spacing: 0;
-        padding: 4px 6px;
+        padding: 6px 8px;
         white-space: nowrap;
+        flex: 1 1 0;
+        text-align: center;
     }
 
-    .ui-box:hover { padding-left: 6px; }
+    .ui-box:hover { padding-left: 8px; }
 
     .tile { font-size: calc(var(--tile-w) * 1.14); }
     .revealed-zone .tile { font-size: calc(var(--tile-w) * 0.8); }
-    .river-tile { font-size: calc(var(--river-w) * 1.12); }
+    .river {
+        gap: 1.5px;
+    }
+
+    .river-tile {
+        box-sizing: border-box;
+        font-size: calc(var(--river-w) * 1.32);
+    }
 
     #hand-bottom {
         display: flex;
         flex-wrap: nowrap;
         white-space: nowrap;
-        gap: 0;
+        gap: var(--mobile-bottom-hand-gap);
         overflow-x: auto;
         overflow-y: hidden;
-        max-width: 84vw;
-        padding: 0 0.2vw;
+        max-width: var(--mobile-bottom-hand-w);
+        width: var(--mobile-bottom-hand-w);
+        padding: 0 0 6px;
         -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.7) rgba(0, 0, 0, 0.35);
     }
 
     #hand-top {
@@ -484,13 +553,16 @@ margin-bottom:6px;
         white-space: nowrap;
     }
 
-    #hand-bottom::-webkit-scrollbar { display: none; }
+    #hand-bottom::-webkit-scrollbar { height: 6px; }
+    #hand-bottom::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.35); border-radius: 999px; }
+    #hand-bottom::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.72); border-radius: 999px; }
 
     #hand-bottom .tile {
-        width: clamp(20px, 5.3vw, 26px);
-        height: calc(clamp(20px, 5.3vw, 26px) * 1.42);
-        font-size: calc(clamp(20px, 5.3vw, 26px) * 1.05);
-        margin: 0 0.4px;
+        box-sizing: border-box;
+        width: var(--mobile-bottom-tile-w);
+        height: calc(var(--mobile-bottom-tile-w) * 1.42);
+        font-size: calc(var(--mobile-bottom-tile-w) * 1.08);
+        margin: 0;
         flex: 0 0 auto;
     }
 
@@ -504,12 +576,84 @@ margin-bottom:6px;
     #river-left { left: 20%; }
     #river-right { right: 20%; }
 
-    #action-bar { bottom: 20vh; gap: 10px; }
+    #action-bar { bottom: 22vh; gap: 10px; }
     .btn-act { width: 58px; height: 58px; font-size: 18px; }
-    .chi-option-btn { min-width: 108px; height: 56px; padding: 0 8px; }
-    .chi-option-tile { width: 20px; height: 30px; font-size: 18px; }
+    .chi-option-btn {
+        min-width: calc(var(--chi-option-tile-w) * 3 + 14px);
+        height: calc(var(--chi-option-tile-h) + 8px);
+        padding: 3px 6px;
+        border-radius: 10px;
+    }
+    .chi-option-tile {
+        width: var(--chi-option-tile-w);
+        height: var(--chi-option-tile-h);
+        font-size: calc(var(--chi-option-tile-w) * var(--chi-option-font-scale));
+    }
 
-    #center-info { width: 100px; height: 100px; }
+    #action-bar.chi-three-mobile {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        padding: 0 10px;
+        box-sizing: border-box;
+    }
+
+    #action-bar.chi-three-mobile .chi-option-btn,
+    #action-bar.chi-three-mobile .btn-act {
+        width: 100%;
+        min-width: 0;
+        height: calc(var(--chi-option-tile-h) + 8px);
+        border-radius: 10px;
+    }
+
+    #mobile-game-bar {
+        display: flex;
+        position: fixed;
+        top: calc(env(safe-area-inset-top, 0px) + 50px);
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1300;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        white-space: nowrap;
+    }
+
+    #mobile-rest-count {
+        min-width: 64px;
+        text-align: center;
+        font-size: 11px;
+        line-height: 1;
+        padding: 5px 8px;
+        border-radius: 999px;
+        color: rgba(255, 255, 255, 0.95);
+        background: rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        box-sizing: border-box;
+    }
+
+    #mobile-game-bar .btn-ui {
+        font-size: 10px;
+        padding: 4px 9px;
+        margin: 0;
+    }
+
+    #center-info {
+        width: auto;
+        height: auto;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        padding: 0;
+        justify-content: center;
+    }
+
+    #center-info #rest-count,
+    #center-info #center-controls {
+        display: none !important;
+    }
+
     #gold-display { font-size: 26px; padding: 2px 10px; }
 }
 
@@ -556,11 +700,19 @@ margin-bottom:6px;
     
     <div class="ui-box" onclick="openRuleModal('score-modal')">SCORING / 计分规则</div>
     <div class="ui-box" onclick="openRuleModal('base-rule-modal')">RULES / 基础规则</div>
+</div>
+<div id="mobile-game-bar">
+    <div id="mobile-rest-count">余牌: 144</div>
+    <button class="btn-ui" onclick="event.stopPropagation(); nextRound()">开局</button>
+    <button class="btn-ui" onclick="event.stopPropagation(); resetAll()">清零</button>
 </div><div id="score-modal" class="rule-modal" onclick="closeRuleModal(this)">
     <div class="rule-content" onclick="event.stopPropagation()">
-        <span class="close-rule" onclick="closeRuleModal('score-modal')">&times;</span>
+        <div class="rule-header">
+            <span class="close-rule" onclick="closeRuleModal('score-modal')">&times;</span>
 <h3>胡牌计分规则</h3>
 
+        </div>
+        <div class="rule-body">
 <div class="rule-section">
 <b>一、基础底分</b><br>
 底分为 1 分。<br>
@@ -603,13 +755,17 @@ margin-bottom:6px;
 * 所有特殊番型均为乘法叠加。*
 </div>
         <p style="font-size: 11px; opacity: 0.7;">* 解释权归HJC所有，有问题可以反馈。</p>
+        </div>
     </div>
 </div>
 
 <div id="base-rule-modal" class="rule-modal" onclick="closeRuleModal(this)">
     <div class="rule-content" onclick="event.stopPropagation()">
+        <div class="rule-header">
         <span class="close-rule" onclick="closeRuleModal('base-rule-modal')">&times;</span>
 <h3>基础规则说明</h3>
+        </div>
+        <div class="rule-body">
 
 <div class="rule-section">
 <b>一、牌型结构</b><br>
@@ -635,12 +791,13 @@ margin-bottom:6px;
 金牌可以代替任意牌完成结构。<br>
 注：持有双金时，只能自摸胡牌，不可点炮。
 </div>
+        </div>
     </div>
 </div>
     <div id="center-info">
         <div id="rest-count" style="font-size: 12px; opacity: 0.8;">144</div>
         <div id="gold-display">?</div>
-        <div style="display: flex;">
+        <div id="center-controls" style="display: flex;">
             <button class="btn-ui" onclick="event.stopPropagation(); nextRound()">开局</button>
             <button class="btn-ui" onclick="event.stopPropagation(); resetAll()">清零</button>
         </div>
@@ -940,31 +1097,71 @@ function renderScores() {
 let actionVoiceProfile = null;
 let actionVoicePrimed = false;
 let actionSfxCtx = null;
+let actionAudioUnlocked = false;
 
-function getActionSfxContext() {
+function getActionSfxContext(createIfNeeded = false) {
     if (actionSfxCtx) return actionSfxCtx;
+    if (!createIfNeeded) return null;
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return null;
-    actionSfxCtx = new Ctx();
+    try {
+        actionSfxCtx = new Ctx();
+    } catch (e) {
+        return null;
+    }
     return actionSfxCtx;
 }
 
-function primeActionSfxEngine() {
-    const ctx = getActionSfxContext();
+function tryUnlockActionSfx() {
+    const ctx = getActionSfxContext(true);
+    if (!ctx) return false;
+
+    if (ctx.state === 'running' || ctx.state === 'interrupted') {
+        actionAudioUnlocked = true;
+        return true;
+    }
+
+    if (ctx.state === 'suspended' && navigator.userActivation && navigator.userActivation.isActive) {
+        ctx.resume().then(() => {
+            if (ctx.state === 'running' || ctx.state === 'interrupted') actionAudioUnlocked = true;
+        }).catch(() => {});
+    }
+    return actionAudioUnlocked;
+}
+
+function primeActionSfxEngine(fromGesture = false) {
+    if (fromGesture) tryUnlockActionSfx();
+    if (!actionAudioUnlocked) return;
+    const ctx = getActionSfxContext(false);
     if (!ctx) return;
-    if (ctx.state === 'suspended') {
+    if (ctx.state === 'suspended' && navigator.userActivation && navigator.userActivation.isActive) {
         ctx.resume().catch(() => {});
     }
 }
 
-function primeActionVoiceEngine() {
-    primeActionSfxEngine();
+function primeActionVoiceEngine(fromGesture = false) {
+    primeActionSfxEngine(fromGesture);
     if ('speechSynthesis' in window) {
         window.speechSynthesis.resume();
     }
     if (actionVoicePrimed) return;
     actionVoicePrimed = true;
     getActionVoiceProfile(); // 预加载语音列表和优选声线
+}
+
+function setupActionAudioUnlock() {
+    const events = ['click', 'touchend', 'keydown'];
+    const unlock = (ev) => {
+        if (ev && ev.isTrusted === false) return;
+        primeActionVoiceEngine(true);
+        if (!actionAudioUnlocked) return;
+        if (actionSfxCtx && (actionSfxCtx.state === 'running' || actionSfxCtx.state === 'interrupted')) {
+            events.forEach(evt => document.removeEventListener(evt, unlock, true));
+        }
+    };
+    events.forEach(evt => {
+        document.addEventListener(evt, unlock, { capture: true });
+    });
 }
 
 function getActionVoiceProfile() {
@@ -1014,11 +1211,12 @@ function speak(text, opts = {}) {
 	}
 
 function playActionInstantSfx(actionType) {
-    const ctx = getActionSfxContext();
+    const isUserGesture = !!(navigator.userActivation && navigator.userActivation.isActive);
+    if (isUserGesture) primeActionSfxEngine(true);
+    if (!actionAudioUnlocked) return;
+    const ctx = getActionSfxContext(false);
     if (!ctx) return;
-    if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-    }
+    if (ctx.state !== 'running' && ctx.state !== 'interrupted') return;
 
     const map = {
         CHI: { f: 740, d: 0.06 },
@@ -1063,7 +1261,8 @@ function playActionVoice(actionType) {
     const item = table[actionType];
     if (!item) return;
 
-    primeActionVoiceEngine();
+    const isUserGesture = !!(navigator.userActivation && navigator.userActivation.isActive);
+    primeActionVoiceEngine(isUserGesture);
     playActionInstantSfx(actionType); // 先响即时音，确保“点了就有反馈”
     const profile = getActionVoiceProfile();
     const text = profile.isMinnan ? item.minnan : item.mandarin;
@@ -1969,6 +2168,7 @@ function checkQiangGang(gangerIdx, tileChar, isAnGang) {
         primeActionVoiceEngine();
 	        state.currentActions = acts;
 	        const bar = document.getElementById('action-bar');
+        bar.classList.remove('chi-three-mobile');
         bar.style.display = 'flex'; bar.innerHTML = '';
         if(acts.HU) bar.innerHTML += `<div class="btn-act" onclick="execute('HU')">胡</div>`;
         if(acts.PENG) bar.innerHTML += `<div class="btn-act" onclick="execute('PENG')">碰</div>`;
@@ -2000,6 +2200,9 @@ function checkQiangGang(gangerIdx, tileChar, isAnGang) {
     function showChiSubMenu() {
         const bar = document.getElementById('action-bar');
         bar.innerHTML = '';
+        const isMobilePortrait = !!(window.matchMedia && window.matchMedia('(max-width: 767px) and (orientation: portrait)').matches);
+        const isThreeChiMobile = isMobilePortrait && Array.isArray(state.currentActions?.CHI) && state.currentActions.CHI.length === 3;
+        bar.classList.toggle('chi-three-mobile', isThreeChiMobile);
         const targetTile = state.lastDiscard;
         const targetLogic = getLogic(targetTile);
 
@@ -2592,6 +2795,8 @@ function render() {
     // 1. 更新余牌显示
     const restEl = document.getElementById('rest-count');
     if (restEl) restEl.innerText = "余牌: " + state.deck.length;
+    const mobileRestEl = document.getElementById('mobile-rest-count');
+    if (mobileRestEl) mobileRestEl.innerText = "余牌: " + state.deck.length;
 
     // 2. 移除所有玩家的高亮，给当前回合玩家添加高亮
     document.querySelectorAll('.player-area').forEach(el => el.classList.remove('active-turn'));
@@ -2889,13 +3094,7 @@ function renderWinText() {
 	    window.onload = function() {
         initGame();
         runHuTests();
-        const primeOnce = () => {
-            primeActionVoiceEngine();
-            document.removeEventListener('pointerdown', primeOnce);
-            document.removeEventListener('touchstart', primeOnce);
-        };
-        document.addEventListener('pointerdown', primeOnce, { once: true });
-        document.addEventListener('touchstart', primeOnce, { once: true, passive: true });
+        setupActionAudioUnlock();
         setTimeout(() => getActionVoiceProfile(), 0);
     };
 </script>
