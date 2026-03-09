@@ -40,6 +40,8 @@
             background: var(--tile-white); border: 1px solid #999; border-radius: 3px;
             display: inline-flex; justify-content: center; align-items: center;
             font-size: calc(var(--tile-w) * 1); margin: 0.5px; box-shadow: 1px 1px 0 #bbb;
+            box-sizing: border-box; line-height: 1; text-align: center;
+            font-family: "Noto Sans Symbols 2", "Segoe UI Symbol", "Apple Symbols", "Apple Color Emoji", "Microsoft YaHei", sans-serif;
             position: relative; transition: all 0.2s; cursor: pointer; color: #000;
         }
         .tile.back { background: var(--tile-back); color: transparent !important; border: 1px solid #0d3b10; }
@@ -56,7 +58,7 @@
         #river-left { left: 22%; top: 50%; transform: translateY(-50%) rotate(90deg); }
         #river-right { right: 22%; top: 50%; transform: translateY(-50%) rotate(-90deg); }
 
-        .river-tile { width: var(--river-w); height: var(--river-h); background: #eee; border: 1px solid #aaa; border-radius: 1px; display: flex; justify-content: center; align-items: center; font-size: calc(var(--river-w) * 0.95); color: #000; }
+        .river-tile { width: var(--river-w); height: var(--river-h); background: #eee; border: 1px solid #aaa; border-radius: 1px; display: flex; justify-content: center; align-items: center; font-size: calc(var(--river-w) * 0.95); color: #000; box-sizing: border-box; line-height: 1; text-align: center; font-family: "Noto Sans Symbols 2", "Segoe UI Symbol", "Apple Symbols", "Apple Color Emoji", "Microsoft YaHei", sans-serif; }
         .river-tile.winning { border: 2px solid red; } 
         
         /* 亮牌/动作区 */
@@ -572,6 +574,24 @@ margin-bottom:6px;
 
     #p-left { left: -15.5vw; }
     #p-right { right: -15.5vw; }
+    #p-left, #p-right {
+        width: var(--mobile-bottom-hand-w);
+        align-items: center;
+    }
+
+    #hand-left, #hand-right,
+    #show-left, #show-right {
+        width: 100%;
+        text-align: center;
+        justify-content: center;
+        box-sizing: border-box;
+    }
+    #hand-left, #hand-right {
+        display: flex;
+        flex-wrap: nowrap;
+        white-space: nowrap;
+        align-items: center;
+    }
 
     #river-left { left: 20%; }
     #river-right { right: 20%; }
@@ -3100,4 +3120,3 @@ function renderWinText() {
 </script>
 </body>
 </html>
-
