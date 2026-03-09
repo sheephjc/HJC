@@ -687,6 +687,16 @@ margin-bottom:6px;
     }
 
     #gold-display { font-size: 26px; padding: 2px 10px; }
+
+    #settle-panel {
+        width: 200px;
+        font-size: 14px;
+        margin-top: 10px;
+    }
+
+    #hu-formula-text {
+        font-size: 16px !important;
+    }
 }
 
 /* 桌面窄视口（如右侧打开控制台）优化：仅在接近竖屏比例时生效 */
@@ -1844,21 +1854,15 @@ function buildSettlementTable(
     }
 
     // ===== 编成HTML表格 =====
-    html += `
-    <div style="text-align:center; padding-bottom:8px; border-bottom:1px solid #ffeb3b; margin-bottom:8px;">
-        <div style="color:#ffeb3b; font-weight:bold; font-size:16px;">四家结算</div>
-    </div>
-    `;
     
     scores.forEach((s, i) => {
         let color = s >= 0 ? "#00ff90" : "#ff6060";
         let sign = s >= 0 ? "+" : "";
         html += `
-        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.1);">
+        <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.1);">
             <div style="color:#ffffff; font-weight:bold;">${names[i]}</div>
             <div style="color:${color}; min-width:40px; text-align:right;">${sign}${s}</div>
-        </div>
-        `;
+        </div>`;
     });
     
     return html;
