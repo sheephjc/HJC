@@ -36,7 +36,7 @@
             width: var(--tile-w); height: var(--tile-h);
             background: var(--tile-white); border: 1px solid #999; border-radius: 3px;
             display: inline-flex; justify-content: center; align-items: center;
-            font-size: calc(var(--tile-w) * 1); margin: 0.5px; box-shadow: 1px 1px 0 #bbb;
+            font-size: calc(var(--tile-w) * 1); line-height: 1; margin: 0.5px; box-shadow: 1px 1px 0 #bbb;
             position: relative; transition: all 0.2s; cursor: pointer; color: #000;
         }
         .tile.back { background: var(--tile-back); color: transparent !important; border: 1px solid #0d3b10; }
@@ -53,7 +53,7 @@
         #river-left { left: 22%; top: 50%; transform: translateY(-50%) rotate(90deg); }
         #river-right { right: 22%; top: 50%; transform: translateY(-50%) rotate(-90deg); }
 
-        .river-tile { width: var(--river-w); height: var(--river-h); background: #eee; border: 1px solid #aaa; border-radius: 1px; display: flex; justify-content: center; align-items: center; font-size: calc(var(--river-w) * 0.95); color: #000; }
+        .river-tile { width: var(--river-w); height: var(--river-h); background: #eee; border: 1px solid #aaa; border-radius: 1px; display: flex; justify-content: center; align-items: center; font-size: calc(var(--river-w) * 0.95); line-height: 1; color: #000; }
         .river-tile.winning { border: 2px solid red; } 
         
         /* 亮牌/动作区 */
@@ -262,6 +262,7 @@
     padding-left: 22px; /* 悬停时轻微右移，增加交互灵动感 */
 }
 
+
 .author-tag {
     /* --- 核心修改部分 --- */
     font-family: "Times New Roman", "SimSun", "STSong", serif; /* 经典的衬线体组合 */
@@ -419,20 +420,94 @@ margin-bottom:6px;
 
 /* 手机竖屏优化：放大自己的手牌，并把东西家外移 */
 @media (max-width: 767px) and (orientation: portrait) {
-    #p-bottom { bottom: 0.8vh; }
+    :root {
+        --river-w: 3.6vw;
+        --river-h: 5.1vw;
+    }
+
+    #p-bottom {
+        bottom: 2.4vh;
+        width: 86vw;
+    }
+
+    #p-top {
+        top: 8.5vh;
+        width: 86vw;
+    }
+
+    .left-top-panel {
+        top: 8px;
+        left: 0;
+        right: 0;
+        width: 100%;
+        padding: 0 8px;
+        box-sizing: border-box;
+        flex-direction: row;
+        justify-content: center;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .author-tag {
+        font-size: 10px;
+        letter-spacing: 1px;
+        padding: 4px 7px;
+        border-left-width: 2px;
+        margin-bottom: 0;
+        white-space: nowrap;
+    }
+
+    .ui-box {
+        font-size: 8px;
+        letter-spacing: 0;
+        padding: 4px 6px;
+        white-space: nowrap;
+    }
+
+    .ui-box:hover { padding-left: 6px; }
+
+    .tile { font-size: calc(var(--tile-w) * 1.2); line-height: 0.92; }
+    .revealed-zone .tile { font-size: calc(var(--tile-w) * 0.86); line-height: 0.92; }
+    .river-tile { font-size: calc(var(--river-w) * 1.22); line-height: 0.9; }
+
+    #hand-bottom {
+        display: flex;
+        flex-wrap: nowrap;
+        white-space: nowrap;
+        gap: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        max-width: 84vw;
+        padding: 0 0.2vw;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    #hand-top {
+        max-width: 84vw;
+        overflow: hidden;
+        white-space: nowrap;
+    }
+
+    #hand-bottom::-webkit-scrollbar { display: none; }
 
     #hand-bottom .tile {
         width: clamp(20px, 5.3vw, 26px);
         height: calc(clamp(20px, 5.3vw, 26px) * 1.42);
-        font-size: calc(clamp(20px, 5.3vw, 26px) * 0.82);
+        font-size: calc(clamp(20px, 5.3vw, 26px) * 1.05);
+        margin: 0 0.4px;
+        flex: 0 0 auto;
     }
 
     #hand-bottom .tile.selected {
         transform: translateY(-10px);
     }
 
-    #p-left { left: -8vw; }
-    #p-right { right: -8vw; }
+    #p-left { left: -15.5vw; }
+    #p-right { right: -15.5vw; }
+
+    #river-left { left: 20%; }
+    #river-right { right: 20%; }
 
     #action-bar { bottom: 20vh; gap: 10px; }
     .btn-act { width: 58px; height: 58px; font-size: 18px; }
