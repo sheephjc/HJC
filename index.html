@@ -205,6 +205,23 @@
         .disabled { opacity: 0.5; cursor: not-allowed; }
         h2 { font-size: 1.4rem; margin-bottom: 10px; font-weight: 500; }
 
+        /* --- 新增：留言板专属样式 --- */
+        .msg-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px 12px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            border-left: 3px solid rgba(255, 255, 255, 0.5);
+            text-align: left;
+            word-wrap: break-word;
+        }
+        .msg-item b { color: #ffeaa7; margin-right: 5px; }
+        .msg-item small { display: block; opacity: 0.5; font-size: 0.7rem; margin-top: 5px; }
+
+        #messages::-webkit-scrollbar { width: 4px; }
+        #messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 10px; }
+
         /* 移动端适配 */
         @media (max-width: 768px) {
             body {
@@ -238,6 +255,7 @@
         <div class="nav-links">
             <a href="小鳄龙/index.html" class="btn">🐊 小鳄龙之家</a>
             <a href="javascript:void(0)" class="btn" onclick="openTools()">🛠️ 我的工具库</a>
+            <a href="javascript:void(0)" class="btn" onclick="openGuestbook()">📝 留言板</a>
         </div>
         <footer>© 2026 HJC'S SPACE</footer>
     </div>
@@ -249,7 +267,7 @@
             <div class="tools-list">
                 <a href="tools/MS.html" class="tool-item" target="_blank" rel="noopener noreferrer">
                     <span class="tool-icon">🧪</span>
-                    <span class="tool-name">高分辨质谱计算器</span
+                    <span class="tool-name">高分辨质谱计算器</span>
                 </a>                                        
                  <a href="tools/漳麻.html" class="tool-item" target="_blank" rel="noopener noreferrer">
                     <span class="tool-icon">🀄</span>
@@ -263,13 +281,109 @@
         </div>
     </div>
 
-    <script>
-        function openTools() {
+    <div id="guestbookModal" class="modal-overlay" onclick="closeGuestbook(event)">
+        <div class="modal-content glass-card" onclick="event.stopPropagation()" style="width: 360px !important;">
+            <span class="close-btn" onclick="closeGuestbook(event)">&times;</span>
+            <h2>留言板</h2>
+            
+            <div id="messages" style="height: 250px; overflow-y: auto; margin: 15px 0; padding-right: 5px;">
+                <p style="opacity: 0.5;">加载留言中...</p>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <input type="text" id="guestName" placeholder="你的昵称" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; padding: 10px; color: white; outline: none;">
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="guestMsg" placeholder="说点什么..." style="flex: 1; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; padding: 10px; color: white; outline: none;">
+                    <button onclick="sendMsg()" style="padding: 10px 15px; border-radius: 8px; border: none; background: rgba(255,255,255,0.8); color: #333; cursor: pointer; font-weight: bold; transition: 0.2s;">发送</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // 将弹窗控制函数挂载到 window，以保证 HTML 里的 onclick 能识别到
+        window.openTools = function() {
             document.getElementById('toolsModal').classList.add('active');
         }
-        function closeTools(e) {
+        window.closeTools = function(e) {
             document.getElementById('toolsModal').classList.remove('active');
         }
+        window.openGuestbook = function() {
+            document.getElementById('guestbookModal').classList.add('active');
+        }
+        window.closeGuestbook = function(e) {
+            document.getElementById('guestbookModal').classList.remove('active');
+        }
+
+        // --- Firebase 初始化 ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+        // 注意这里也必须使用对应 12.10.0 版本的 firestore
+        import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAclPPHIKBdfhZsryNxjSoKS61h2SlOwY4",
+            authDomain: "hjc-s-website.firebaseapp.com",
+            projectId: "hjc-s-website",
+            storageBucket: "hjc-s-website.firebasestorage.app",
+            messagingSenderId: "1039075400341",
+            appId: "1:1039075400341:web:2386e52998e8bd9038199c"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const messagesCol = collection(db, "guestbook");
+
+        // --- 1. 实时监听并渲染留言 ---
+        const q = query(messagesCol, orderBy("createdAt", "desc"), limit(50));
+        onSnapshot(q, (snapshot) => {
+            const msgContainer = document.getElementById('messages');
+            msgContainer.innerHTML = '';
+            let hasMsgs = false;
+            
+            snapshot.forEach((doc) => {
+                hasMsgs = true;
+                const data = doc.data();
+                // 格式化时间，如果刚刚发送可能还没有服务器时间
+                const date = data.createdAt?.toDate ? data.createdAt.toDate().toLocaleString() : '刚刚';
+                msgContainer.innerHTML += `
+                    <div class="msg-item">
+                        <b>${data.name}:</b> ${data.text}
+                        <small>${date}</small>
+                    </div>`;
+            });
+
+            if (!hasMsgs) {
+                msgContainer.innerHTML = '<p style="opacity: 0.5;">暂无留言，快来抢沙发！</p>';
+            }
+        });
+
+        // --- 2. 发送留言功能 ---
+        window.sendMsg = async () => {
+            const nameInput = document.getElementById('guestName');
+            const msgInput = document.getElementById('guestMsg');
+            const btn = document.querySelector('button[onclick="sendMsg()"]');
+            
+            if (!msgInput.value.trim()) return;
+
+            // 简单防连点
+            btn.disabled = true;
+            btn.innerText = "发送中...";
+
+            try {
+                await addDoc(messagesCol, {
+                    name: nameInput.value.trim() || "路人甲",
+                    text: msgInput.value.trim(),
+                    createdAt: serverTimestamp()
+                });
+                msgInput.value = ''; // 成功后清空内容
+            } catch (e) {
+                console.error("写入失败:", e);
+                alert("发送失败，请稍后再试！");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "发送";
+            }
+        };
     </script>
 </body>
 </html>
