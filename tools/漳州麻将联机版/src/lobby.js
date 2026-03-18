@@ -11,6 +11,7 @@ import {
 import { ensureAnonymousAuth, getFirebaseConfigStatus, hasFirebaseConfig } from './firebase-client.js';
 import { clearSession, loadSession, saveSession } from './session.js';
 import { initMobileScreenGuard } from './mobile-screen-guard.js';
+import { showActionToast } from './ui-toast.js';
 
 // 文案门禁关键短语（勿删）：
 // 等待房间状态同步
@@ -499,6 +500,7 @@ async function handleStartBattleGame() {
     if (!roomState || !session) return;
     if (!isHost()) {
         setStatus('请由房主开启游戏。', true);
+        showActionToast('请由房主开启游戏。', { isError: true });
         return;
     }
 

@@ -546,7 +546,6 @@ export async function switchSeat(roomCodeInput, uid, nicknameInput, targetSeatId
             appendPatchEntry(patch, `seats/${targetSeatId}/control`, 'human');
             appendPatchEntry(patch, `seats/${targetSeatId}/nickname`, nickname);
             appendPatchEntry(patch, `seats/${targetSeatId}/lastSeen`, now);
-            appendPatchEntry(patch, 'meta/updatedAt', now);
             await update(roomRef, patch);
         } catch (error) {
             throw normalizeFirebaseDbError(
@@ -615,7 +614,6 @@ export async function switchSeat(roomCodeInput, uid, nicknameInput, targetSeatId
         for (const seatId of releaseSeatIds) {
             appendPatchEntry(patch, `seats/${seatId}`, buildBotSeat(seatId, now));
         }
-        appendPatchEntry(patch, 'meta/updatedAt', now);
         await update(roomRef, patch);
     } catch (error) {
         throw normalizeFirebaseDbError(

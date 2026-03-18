@@ -786,6 +786,11 @@ input, select {
     transform: translateX(-50%) translateY(0);
 }
 
+.action-toast.error {
+    background: rgba(127, 29, 29, 0.94);
+    border-color: rgba(248, 113, 113, 0.72);
+}
+
 .action-toast.hu {
     background: rgba(127, 29, 29, 0.93);
     border-color: rgba(248, 113, 113, 0.7);

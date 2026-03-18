@@ -13,6 +13,7 @@ import {
 } from './room-service.js';
 import { clearSession, loadSession, saveSession } from './session.js';
 import { roomStatusLabel } from './ui-labels.js';
+import { showActionToast } from './ui-toast.js';
 
 // 文案门禁关键短语（勿删）：
 // 等待牌局初始化
@@ -1562,6 +1563,7 @@ async function handleNextRound() {
     if (!gameState || getSelfSeatNo() === null) return;
     if (!isSelfDealer(gameState)) {
         setStatus('请由庄家开启下一局', true);
+        showActionToast('请由庄家开启下一局', { isError: true });
         return;
     }
 
@@ -1577,6 +1579,7 @@ async function handleOpenGold() {
     if (gameState.phase !== 'playing' || gameState.goldRevealed !== false) return;
     if (!isSelfDealer(gameState)) {
         setStatus('请由庄家开金', true);
+        showActionToast('请由庄家开金', { isError: true });
         return;
     }
 

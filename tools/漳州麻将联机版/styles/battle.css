@@ -24,6 +24,39 @@
         body.screen-guard-mismatch {
             overflow: hidden;
         }
+
+        .action-toast {
+            position: fixed;
+            left: 50%;
+            top: calc(env(safe-area-inset-top, 0px) + 10px);
+            transform: translateX(-50%) translateY(-12px);
+            min-width: 180px;
+            max-width: min(92vw, 560px);
+            padding: 10px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            background: rgba(15, 23, 42, 0.9);
+            color: #f8fafc;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            box-shadow: 0 10px 26px rgba(2, 6, 23, 0.36);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 2500;
+            transition: opacity 0.22s ease, transform 0.22s ease;
+        }
+
+        .action-toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .action-toast.error {
+            background: rgba(127, 29, 29, 0.94);
+            border-color: rgba(248, 113, 113, 0.72);
+        }
         
         /* 玩家区域 */
         .player-area { position: absolute; display: flex; flex-direction: column; align-items: center; transition: all 0.3s; }
