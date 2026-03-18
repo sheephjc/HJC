@@ -44,7 +44,8 @@ let debugEntryUnlocked = false;
 const disposeScreenGuard = initMobileScreenGuard({
     expectedOrientation: 'portrait',
     rootSelector: 'main.page',
-    pageName: '大厅'
+    pageName: '大厅',
+    enforceOrientation: false
 });
 
 function setStatus(text, isError = false) {

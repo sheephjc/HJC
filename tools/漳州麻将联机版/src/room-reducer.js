@@ -26,6 +26,13 @@ function findSeatIdByUid(seats = {}, uid = null) {
     return null;
 }
 
+function isDealerBotControlled(state = {}) {
+    const dealerSeatId = Number(state?.dealerSeat);
+    if (!Number.isInteger(dealerSeatId) || dealerSeatId < 0 || dealerSeatId > 3) return false;
+    const dealerControl = state?.seatControls?.[String(dealerSeatId)] || 'human';
+    return dealerControl === 'bot';
+}
+
 export function buildHumanSeat(seatId, uid, nickname, online = true, now = Date.now()) {
     return {
         seatId,
@@ -148,19 +155,35 @@ export function defaultStateReducer(gameState, actionIntent, now = Date.now(), c
         ? context.actorUid
         : null;
     let state = syncSeatControlsToGameState(gameState, seats, now);
+    const actionType = String(actionIntent?.type || '').toUpperCase();
+    const actorSeatId = findSeatIdByUid(seats, actorUid);
+    const dealerSeatId = Number(state?.dealerSeat);
+    const dealerIsBotControlled = isDealerBotControlled(state);
+    const actorIsHost = !!hostUid && !!actorUid && String(hostUid) === String(actorUid);
 
-    if (DEALER_ONLY_ACTION_TYPES.has(String(actionIntent?.type || '').toUpperCase())) {
-        const actorSeatId = findSeatIdByUid(seats, actorUid);
-        if (!Number.isInteger(actorSeatId) || actorSeatId !== Number(state?.dealerSeat)) {
+    if (DEALER_ONLY_ACTION_TYPES.has(actionType)) {
+        if (dealerIsBotControlled) {
+            if (!actorIsHost) return state;
+        } else if (!Number.isInteger(actorSeatId) || actorSeatId !== dealerSeatId) {
             return state;
         }
     }
 
     let normalizedAction = actionIntent;
-    if (actionIntent?.type === 'ROUND_START') {
-        const forcedHostGoldCount = normalizeForcedHostGoldCount(actionIntent?.payload?.forcedHostGoldCount);
+    if (DEALER_ONLY_ACTION_TYPES.has(actionType)
+        && dealerIsBotControlled
+        && actorIsHost
+        && Number.isInteger(dealerSeatId)) {
+        normalizedAction = {
+            ...(normalizedAction || {}),
+            seatId: dealerSeatId
+        };
+    }
+
+    if (actionType === 'ROUND_START') {
+        const forcedHostGoldCount = normalizeForcedHostGoldCount(normalizedAction?.payload?.forcedHostGoldCount);
         const payload = {
-            ...(actionIntent?.payload || {})
+            ...(normalizedAction?.payload || {})
         };
         if (forcedHostGoldCount !== null) {
             payload.forcedHostGoldCount = forcedHostGoldCount;
@@ -173,7 +196,7 @@ export function defaultStateReducer(gameState, actionIntent, now = Date.now(), c
             }
         }
         normalizedAction = {
-            ...(actionIntent || {}),
+            ...(normalizedAction || {}),
             payload
         };
     }

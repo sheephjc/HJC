@@ -91,10 +91,11 @@ function orientationMatches(expectedOrientation) {
 
 export function initMobileScreenGuard(options = {}) {
     const expectedOrientation = getExpectedOrientation(options.expectedOrientation || 'portrait');
+    const enforceOrientation = options.enforceOrientation !== false;
     const rootSelector = String(options.rootSelector || 'body');
     const pageName = String(options.pageName || '');
     const rootEl = document.querySelector(rootSelector) || document.body;
-    const maskEl = ensureMaskElement(pageName, expectedOrientation);
+    const maskEl = enforceOrientation ? ensureMaskElement(pageName, expectedOrientation) : null;
     let disposed = false;
 
     const setViewportVars = () => {
@@ -113,7 +114,7 @@ export function initMobileScreenGuard(options = {}) {
         setViewportVars();
 
         const isPhone = isPhoneLikeViewport();
-        const mismatch = isPhone && !orientationMatches(expectedOrientation);
+        const mismatch = enforceOrientation && isPhone && !orientationMatches(expectedOrientation);
 
         document.documentElement.classList.add('screen-guard-enabled');
         document.body?.classList.add('screen-guard-enabled');
@@ -132,7 +133,7 @@ export function initMobileScreenGuard(options = {}) {
     };
 
     const tryLockOrientation = async () => {
-        if (disposed || !isPhoneLikeViewport()) return;
+        if (disposed || !enforceOrientation || !isPhoneLikeViewport()) return;
         const lockApi = window.screen?.orientation;
         if (!lockApi || typeof lockApi.lock !== 'function') return;
         const lockTarget = expectedOrientation === 'portrait' ? 'portrait' : 'landscape';

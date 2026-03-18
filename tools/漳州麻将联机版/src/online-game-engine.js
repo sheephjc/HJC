@@ -4,6 +4,7 @@ const SEAT_IDS = Object.freeze(['0', '1', '2', '3']);
 const CLAIM_TIMEOUT_MS = 5000;
 const CLAIM_PRIORITY = Object.freeze({ HU: 0, PENG: 1, GANG: 1, CHI: 2 });
 const BOT_ACTION_DELAY_MS = 280;
+const MAX_INSTANT_SCORE_LOG_SIZE = 400;
 const WHITE_DRAGON_TILE = 'Z7';
 export const SUPPORTED_ONLINE_ACTION_TYPES = Object.freeze([
     'ROUND_START',
@@ -647,8 +648,34 @@ function settleWin(state, { winnerSeat, loserSeat = null, isSelfDraw, reason, wi
         dealerStreakAfter: state.dealerStreak,
         ts: now
     };
+    pushInstantScoreEntry(state, {
+        type: 'HU_SETTLE',
+        seatId: winner,
+        winnerSeat: winner,
+        loserSeat: isSelfDraw ? null : Number(loserSeat),
+        isSelfDraw: !!isSelfDraw,
+        winTile: winTile || null,
+        specialTypes: Array.isArray(specialTypes) ? [...specialTypes] : [],
+        totalWin,
+        delta,
+        ts: now
+    });
     state.pendingClaim = null;
     state.currentDraw = null;
+}
+
+function pushInstantScoreEntry(state, entry = {}) {
+    if (!Array.isArray(state.instantScoreLog)) state.instantScoreLog = [];
+    const roundNo = Number.isInteger(Number(entry.roundNo))
+        ? Number(entry.roundNo)
+        : Number(state.roundNo || 1);
+    state.instantScoreLog.push({
+        ...entry,
+        roundNo
+    });
+    if (state.instantScoreLog.length > MAX_INSTANT_SCORE_LOG_SIZE) {
+        state.instantScoreLog = state.instantScoreLog.slice(-MAX_INSTANT_SCORE_LOG_SIZE);
+    }
 }
 
 function applyInstantGangScore(state, gangerSeat, isAnGang = false, now = Date.now()) {
@@ -666,16 +693,12 @@ function applyInstantGangScore(state, gangerSeat, isAnGang = false, now = Date.n
         state.scores[i] += delta[i];
     }
 
-    if (!Array.isArray(state.instantScoreLog)) state.instantScoreLog = [];
-    state.instantScoreLog.push({
+    pushInstantScoreEntry(state, {
         type: isAnGang ? 'AN_GANG' : 'MING_GANG',
         seatId: winner,
         delta,
         ts: now
     });
-    if (state.instantScoreLog.length > 40) {
-        state.instantScoreLog = state.instantScoreLog.slice(-40);
-    }
 }
 
 function createChuiFengState() {
@@ -700,17 +723,13 @@ function applyChuiFengSettlement(state, now = Date.now(), targetTile = null) {
         state.scores[i] += delta[i];
     }
 
-    if (!Array.isArray(state.instantScoreLog)) state.instantScoreLog = [];
-    state.instantScoreLog.push({
+    pushInstantScoreEntry(state, {
         type: 'CHUI_FENG',
         seatId: dealer,
         targetTile,
         delta,
         ts: now
     });
-    if (state.instantScoreLog.length > 40) {
-        state.instantScoreLog = state.instantScoreLog.slice(-40);
-    }
 }
 
 function checkChuiFengAfterDiscard(state, discardSeatId, discardTile, now = Date.now()) {
@@ -1570,7 +1589,7 @@ function createNextRoundState(previousState, now = Date.now(), options = {}) {
     });
 
     const previousInstantLog = Array.isArray(previousState?.instantScoreLog) ? previousState.instantScoreLog : [];
-    nextState.instantScoreLog = previousInstantLog.slice(-200);
+    nextState.instantScoreLog = previousInstantLog.slice(-MAX_INSTANT_SCORE_LOG_SIZE);
     return nextState;
 }
 
@@ -1707,6 +1726,11 @@ export function runBotTurns(gameState, seats = {}, now = Date.now(), maxSteps = 
     const nextReadyAt = Number(state.botActionReadyAt || 0);
     state.botActionReadyAt = Number.isFinite(nextReadyAt) ? nextReadyAt : 0;
     let appliedSteps = 0;
+
+    if (state.phase === 'ended') {
+        state.botActionReadyAt = 0;
+        return { state, appliedSteps };
+    }
 
     while (state.phase === 'playing' && appliedSteps < maxSteps) {
         const tick = now + appliedSteps;

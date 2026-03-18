@@ -43,7 +43,8 @@ const ACTION_SFX_MAP = Object.freeze({
     AN_GANG: { f: 360, d: 0.11, wave: 'triangle' },
     BU_GANG: { f: 390, d: 0.11, wave: 'triangle' },
     HU: { f: 980, d: 0.14, wave: 'sine' },
-    FLOWER_REPLENISH: { f: 840, d: 0.075, wave: 'triangle' }
+    FLOWER_REPLENISH: { f: 840, d: 0.075, wave: 'triangle' },
+    CHUI_FENG: { f: 520, d: 0.16, wave: 'triangle' }
 });
 const ACTION_VOICE_MAP = Object.freeze({
     OPEN_GOLD: { minnan: '開金', mandarin: '开金' },
@@ -103,6 +104,7 @@ let actionVoiceProfile = null;
 let actionVoicePrimed = false;
 let lastActionAudioKey = '';
 let lastFlowerCueKey = '';
+let lastChuiFengCueKey = '';
 let lastTableOutcomeEffectKey = '';
 let lastGoldRevealEffectKey = '';
 let replacementDrawRevealTimer = null;
@@ -182,6 +184,12 @@ function getSeatNickname(seatId) {
 
 function getSettlementSeatLabel(seatId) {
     return `${getSeatNickname(seatId)}(${seatNameAbsolute(seatId)})`;
+}
+
+function getInstantSeatLabel(seatId) {
+    const n = Number(seatId);
+    if (!Number.isInteger(n) || n < 0 || n > 3) return `座位${seatId}`;
+    return getSeatNickname(n);
 }
 
 function getCompactSeatLabel(seatId, seat = null) {
@@ -367,6 +375,19 @@ function isSelfDealer(gameState = getGameState()) {
     return selfSeat !== null && dealerSeat !== null && Number(selfSeat) === Number(dealerSeat);
 }
 
+function isDealerBotControlled(gameState = getGameState()) {
+    const dealerSeat = getDealerSeatNo(gameState);
+    if (dealerSeat === null) return false;
+    const dealerControl = gameState?.seatControls?.[String(dealerSeat)] || 'human';
+    return dealerControl === 'bot';
+}
+
+function canOperateDealerAction(gameState = getGameState()) {
+    if (!gameState || getSelfSeatNo() === null) return false;
+    if (isSelfDealer(gameState)) return true;
+    return isDealerBotControlled(gameState) && isHost();
+}
+
 function isGoldRevealed(gameState = getGameState()) {
     return gameState?.goldRevealed !== false;
 }
@@ -427,7 +448,7 @@ function renderTableOutcomeEffects() {
             loserArea.classList.add('lose-mark');
             const text = document.createElement('div');
             text.className = 'result-text lose-text';
-            text.textContent = '点炮 ????';
+            text.textContent = '点炮 👎🏻';
             loserArea.appendChild(text);
         }
     }
@@ -692,8 +713,10 @@ function renderBoard() {
     } else if (control === 'bot') {
         setStatus('当前 AI 正在代打此座位');
     } else if (!goldReady) {
-        if (isSelfDealer(gameState)) {
+        if (canOperateDealerAction(gameState)) {
             setStatus('等待你开金，点击屏幕中央“开金”按钮');
+        } else if (isDealerBotControlled(gameState)) {
+            setStatus('等待房主开金');
         } else {
             const dealerSeat = getDealerSeatNo(gameState);
             const dealerName = dealerSeat === null ? '庄家' : getSettlementSeatLabel(dealerSeat);
@@ -997,6 +1020,49 @@ function syncFlowerCue(gameState = null, primeOnly = false) {
     }, cueDelayMs);
 }
 
+function getLatestChuiFengLog(gameState = null) {
+    const logs = Array.isArray(gameState?.instantScoreLog) ? gameState.instantScoreLog : [];
+    for (let i = logs.length - 1; i >= 0; i -= 1) {
+        const entry = logs[i];
+        if (String(entry?.type || '').toUpperCase() === 'CHUI_FENG') {
+            return entry;
+        }
+    }
+    return null;
+}
+
+function chuiFengCueKey(gameState = null) {
+    const entry = getLatestChuiFengLog(gameState);
+    if (!entry) return '';
+    const seatId = Number.isInteger(Number(entry.seatId)) ? Number(entry.seatId) : 'x';
+    const tile = String(entry.targetTile || '');
+    const ts = Number.isFinite(entry.ts) ? entry.ts : 'x';
+    return `${seatId}|${tile}|${ts}`;
+}
+
+function showChuiFengEffect() {
+    const table = document.getElementById('table');
+    if (!table) return;
+    const effect = document.createElement('div');
+    effect.className = 'chui-feng-effect';
+    effect.textContent = '吹风';
+    table.appendChild(effect);
+    setTimeout(() => effect.remove(), 1000);
+}
+
+function syncChuiFengCue(gameState = null, primeOnly = false) {
+    const key = chuiFengCueKey(gameState);
+    if (!key) return;
+    if (key === lastChuiFengCueKey) return;
+    if (primeOnly) {
+        lastChuiFengCueKey = key;
+        return;
+    }
+    lastChuiFengCueKey = key;
+    showChuiFengEffect();
+    playActionSfx('CHUI_FENG');
+}
+
 function goldRevealEffectKey(gameState = null) {
     if (!gameState || gameState.goldRevealed !== true || !gameState.goldTile) return '';
     const revealAt = Number(gameState.goldRevealedAt || 0);
@@ -1202,26 +1268,31 @@ function formatInstantTs(ts) {
 }
 
 function formatInstantType(entry = {}) {
-    const seatText = seatNamePerspective(entry.seatId);
+    const seatText = getInstantSeatLabel(entry.seatId);
     if (entry.type === 'AN_GANG') return `暗杠 ${seatText}`;
     if (entry.type === 'MING_GANG') return `明/补杠 ${seatText}`;
     if (entry.type === 'HU_SETTLE') {
-        const winner = Number.isInteger(entry.winnerSeat) ? seatNamePerspective(entry.winnerSeat) : seatText;
+        const winner = Number.isInteger(entry.winnerSeat) ? getInstantSeatLabel(entry.winnerSeat) : seatText;
         return `胡牌结算 ${winner}`;
     }
     if (entry.type === 'CHUI_FENG') {
-        const tileText = entry.targetTile ? `${toTileEmoji(entry.targetTile)}` : '';
+        const tileText = entry.targetTile ? ` ${toTileEmoji(entry.targetTile)}` : '';
         return `吹风 庄家 ${seatText}${tileText}`;
     }
     return entry.type || '即时分';
 }
 
+function formatInstantRound(entry = {}) {
+    const roundNo = Number(entry?.roundNo);
+    if (!Number.isInteger(roundNo) || roundNo <= 0) return '第?局';
+    return `第${roundNo}局`;
+}
+
 function formatInstantDeltaLine(delta = []) {
-    const baseSeat = getViewerBaseSeat();
     return [0, 1, 2, 3].map((seatId) => {
         const value = Number(delta[seatId] || 0);
         const sign = value >= 0 ? '+' : '';
-        return `${seatNamePerspective(seatId, baseSeat)} ${sign}${value}`;
+        return `${getInstantSeatLabel(seatId)} ${sign}${value}`;
     }).join(' | ');
 }
 
@@ -1235,25 +1306,14 @@ function renderInstantScoreLog() {
     }
 
     const logs = Array.isArray(gameState.instantScoreLog) ? gameState.instantScoreLog : [];
-    const combinedLogs = [...logs];
-    const outcome = gameState?.outcome || null;
-    if (outcome && Array.isArray(outcome.payout)) {
-        combinedLogs.push({
-            type: 'HU_SETTLE',
-            seatId: Number.isInteger(outcome.winner) ? outcome.winner : null,
-            winnerSeat: Number.isInteger(outcome.winner) ? outcome.winner : null,
-            delta: outcome.payout,
-            ts: Number.isFinite(outcome.ts) ? outcome.ts : Date.now()
-        });
-    }
-    if (!combinedLogs.length) {
+    if (!logs.length) {
         instantScoreLogEl.innerHTML = '<div class="instant-empty">暂无即时分记录</div>';
         return;
     }
 
-    const rows = combinedLogs.slice(-10).reverse().map((entry) => `
+    const rows = logs.slice().reverse().map((entry) => `
         <div class="instant-row">
-            <div class="instant-type">${formatInstantType(entry)}  ${formatInstantTs(entry.ts)}</div>
+            <div class="instant-type">${formatInstantRound(entry)} · ${formatInstantType(entry)} · ${formatInstantTs(entry.ts)}</div>
             <div class="instant-delta">${formatInstantDeltaLine(entry.delta || [])}</div>
         </div>
     `);
@@ -1397,7 +1457,7 @@ function kickHostLoopSoon() {
 }
 
 async function submitIntent(type, payload = {}, options = {}) {
-    if (!roomState || !session) return;
+    if (!roomState || !session) return false;
     const seatId = session.seatId === null || session.seatId === undefined ? 0 : Number(session.seatId);
     const action = createAction({
         type,
@@ -1412,8 +1472,10 @@ async function submitIntent(type, payload = {}, options = {}) {
         await submitActionIntent(roomCode, session.uid, action);
         kickHostLoopSoon();
         setStatus(options.successText || `已提交 ${type}`);
+        return true;
     } catch (error) {
         setStatus(error.message || '提交失败', true);
+        return false;
     }
 }
 
@@ -1561,9 +1623,12 @@ function handleBoardOutsideClick(event) {
 async function handleNextRound() {
     const gameState = getGameState();
     if (!gameState || getSelfSeatNo() === null) return;
-    if (!isSelfDealer(gameState)) {
-        setStatus('请由庄家开启下一局', true);
-        showActionToast('请由庄家开启下一局', { isError: true });
+    if (!canOperateDealerAction(gameState)) {
+        const message = isDealerBotControlled(gameState)
+            ? '请由房主操作下一局'
+            : '请由庄家开启下一局';
+        setStatus(message, true);
+        showActionToast(message, { isError: true });
         return;
     }
 
@@ -1577,9 +1642,12 @@ async function handleOpenGold() {
     const gameState = getGameState();
     if (!gameState || getSelfSeatNo() === null) return;
     if (gameState.phase !== 'playing' || gameState.goldRevealed !== false) return;
-    if (!isSelfDealer(gameState)) {
-        setStatus('请由庄家开金', true);
-        showActionToast('请由庄家开金', { isError: true });
+    if (!canOperateDealerAction(gameState)) {
+        const message = isDealerBotControlled(gameState)
+            ? '请由房主操作开金'
+            : '请由庄家开金';
+        setStatus(message, true);
+        showActionToast(message, { isError: true });
         return;
     }
 
@@ -1741,6 +1809,7 @@ async function bootstrap() {
         syncActionAudio(roomState?.game?.state || null, firstSnapshot);
         syncGoldRevealEffect(roomState?.game?.state || null, firstSnapshot);
         syncFlowerCue(roomState?.game?.state || null, firstSnapshot);
+        syncChuiFengCue(roomState?.game?.state || null, firstSnapshot);
 
         try {
             await tryElectHost(roomCode, session.uid, roomState);
