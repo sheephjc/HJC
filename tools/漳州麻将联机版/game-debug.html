@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漳州麻将联机调试页</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🀆</text></svg>">
+    <link rel="stylesheet" href="./styles/main.css?v=20260318r34">
+</head>
+<body>
+    <main class="page">
+        <section class="card room-header">
+            <div>
+                <h1>调试房间</h1>
+                <p id="room-meta" class="muted">房间加载中...</p>
+            </div>
+            <div class="row">
+                <button id="start-game-btn" class="btn btn-primary" type="button">开始对局</button>
+                <button id="start-single-gold-btn" class="btn" type="button">单金开局</button>
+                <button id="start-double-gold-btn" class="btn" type="button">双金开局</button>
+                <button id="start-triple-gold-btn" class="btn" type="button">三金开局</button>
+                <button id="copy-room-code-btn" class="btn" type="button">复制房间码</button>
+                <button id="leave-room-btn" class="btn btn-danger" type="button">离开房间</button>
+            </div>
+            <p id="start-game-hint" class="muted start-game-hint">等待房间状态同步...</p>
+        </section>
+
+        <section class="card">
+            <h2>座位状态</h2>
+            <div id="seat-grid" class="seat-grid"></div>
+        </section>
+
+        <section class="card">
+            <h2>牌桌视图</h2>
+            <div id="table-board" class="table-board"></div>
+        </section>
+
+        <section class="card">
+            <h2>本座手牌与响应</h2>
+            <p id="turn-hint" class="muted">等待牌局状态...</p>
+            <div id="self-hand" class="tile-row"></div>
+            <div id="reaction-bar" class="row"></div>
+        </section>
+
+        <section class="card">
+            <h2>结算与即时分</h2>
+            <div id="outcome-card" class="hidden">
+                <p id="outcome-summary" class="muted"></p>
+                <div id="outcome-payout"></div>
+            </div>
+            <button id="next-round-btn" class="btn btn-primary" type="button" style="display:none;">下一局</button>
+            <div id="instant-score-log" class="instant-log"></div>
+        </section>
+
+        <section class="card">
+            <h2>权威状态快照</h2>
+            <pre id="state-preview" class="state-preview">等待房间数据...</pre>
+        </section>
+
+        <section class="card">
+            <h2>同步诊断</h2>
+            <div id="sync-diagnostics" class="diag-panel"></div>
+            <div class="row">
+                <button id="copy-diagnostics-btn" class="btn" type="button">复制诊断信息</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>调试动作</h2>
+            <div class="debug-toggle-row">
+                <label class="debug-toggle" for="debug-mode-toggle">
+                    <input id="debug-mode-toggle" type="checkbox">
+                    开启调试模式（仅房主）
+                </label>
+                <p id="debug-mode-hint" class="muted">仅房主可开启调试模式。</p>
+            </div>
+
+            <div id="debug-panel" class="debug-panel disabled">
+                <div class="row">
+                    <select id="debug-preset-select">
+                        <option value="">选择模板</option>
+                        <option value="DISCARD_0">DISCARD_0</option>
+                        <option value="PASS">PASS</option>
+                        <option value="HU">HU</option>
+                        <option value="FLOWER_REPLENISH">FLOWER_REPLENISH</option>
+                        <option value="AN_GANG_W1">AN_GANG_W1</option>
+                        <option value="BU_GANG_W1">BU_GANG_W1</option>
+                        <option value="ROUND_START">ROUND_START</option>
+                    </select>
+                    <button id="apply-debug-preset-btn" class="btn" type="button">应用模板</button>
+                </div>
+
+                <div class="row">
+                    <select id="action-seat-select">
+                        <option value="SELF">当前座位</option>
+                        <option value="0">座位 0（南）</option>
+                        <option value="1">座位 1（东）</option>
+                        <option value="2">座位 2（北）</option>
+                        <option value="3">座位 3（西）</option>
+                    </select>
+
+                    <select id="action-type-select">
+                        <option value="DISCARD">DISCARD</option>
+                        <option value="PASS">PASS</option>
+                        <option value="HU">HU</option>
+                        <option value="CHI">CHI</option>
+                        <option value="PENG">PENG</option>
+                        <option value="GANG">GANG</option>
+                        <option value="AN_GANG">AN_GANG</option>
+                        <option value="BU_GANG">BU_GANG</option>
+                        <option value="FLOWER_REPLENISH">FLOWER_REPLENISH</option>
+                        <option value="ROUND_START">ROUND_START</option>
+                    </select>
+                </div>
+
+                <div class="row">
+                    <input id="action-payload-input" type="text" placeholder='payload JSON，例如 {"index":0}'>
+                    <button id="send-action-btn" class="btn btn-primary" type="button">发送动作</button>
+                </div>
+            </div>
+
+            <p id="action-status" class="status">调试模式已关闭。</p>
+        </section>
+    </main>
+
+    <div id="action-toast" class="action-toast"></div>
+    <canvas id="hu-canvas" class="hu-canvas"></canvas>
+
+    <script type="module" src="./src/game.js?v=20260318r34"></script>
+</body>
+</html>

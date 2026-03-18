@@ -1,0 +1,199 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>漳州麻将联机对局</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🀆</text></svg>">
+    <link rel="stylesheet" href="./styles/battle.css?v=20260318r34">
+</head>
+<body>
+    <div id="table">
+        <div class="online-room-bar">
+            <div class="online-room-left">
+                <div id="room-meta" class="online-room-meta"></div>
+                <div id="turn-status" class="online-room-status"></div>
+                <div id="room-action-summary" class="online-room-summary"></div>
+            </div>
+            <div class="online-room-actions">
+                <button id="next-round-btn" class="btn-ui" type="button" style="display:none;">下一局</button>
+                <button id="leave-room-btn" class="btn-ui danger" type="button">离开房间</button>
+            </div>
+        </div>
+
+        <div id="mobile-game-bar">
+            <div id="mobile-turn-status" class="mobile-turn-status">等待房间状态同步...</div>
+            <button id="mobile-next-round-btn" class="btn-ui" type="button" style="display:none;">下一局</button>
+            <button id="mobile-leave-room-btn" class="btn-ui" type="button">离开</button>
+        </div>
+
+        <div class="left-top-panel">
+            <div class="author-tag">HJC</div>
+            <button class="ui-box" type="button" data-open-modal="score-modal">计分规则</button>
+            <button class="ui-box" type="button" data-open-modal="base-rule-modal">基础规则</button>
+            <button class="ui-box" type="button" data-open-modal="instant-score-modal">即时分日志</button>
+        </div>
+
+        <div id="center-info">
+            <div id="gold-display">?</div>
+            <div id="center-controls">
+                <button id="center-next-round-btn" class="btn-ui" type="button" style="display:none;">下一局</button>
+                <button id="center-leave-room-btn" class="btn-ui danger" type="button">离开房间</button>
+            </div>
+        </div>
+        <div id="center-open-gold-wrap">
+            <button id="center-open-gold-btn" class="btn-ui gold-action" type="button" style="display:none;">开金</button>
+        </div>
+
+        <div id="river-top" class="river"></div>
+        <div id="river-bottom" class="river"></div>
+        <div id="river-left" class="river"></div>
+        <div id="river-right" class="river"></div>
+
+        <div id="p-top" class="player-area">
+            <div id="score-board-top" class="score-board">
+                <span id="seat-name-top">上家</span>：
+                <span id="score-top" class="score-val">0</span>
+            </div>
+            <div id="show-top" class="revealed-zone"></div>
+            <div id="hand-top" class="hand"></div>
+        </div>
+
+        <div id="p-left" class="player-area">
+            <div id="score-board-left" class="score-board">
+                <span id="seat-name-left">左家</span>：
+                <span id="score-left" class="score-val">0</span>
+            </div>
+            <div id="show-left" class="revealed-zone"></div>
+            <div id="hand-left" class="hand"></div>
+        </div>
+
+        <div id="p-right" class="player-area">
+            <div id="score-board-right" class="score-board">
+                <span id="seat-name-right">右家</span>：
+                <span id="score-right" class="score-val">0</span>
+            </div>
+            <div id="show-right" class="revealed-zone"></div>
+            <div id="hand-right" class="hand"></div>
+        </div>
+
+        <div id="p-bottom" class="player-area">
+            <div id="score-board-bottom" class="score-board">
+                <span id="seat-name-bottom">你</span>：
+                <span id="score-bottom" class="score-val">0</span>
+            </div>
+            <div id="show-bottom" class="revealed-zone"></div>
+            <div id="hand-bottom" class="hand"></div>
+        </div>
+
+        <div id="action-bar" class="hidden"></div>
+        <div id="gold-reveal-fx" aria-hidden="true"></div>
+    </div>
+
+    <div id="hu-overlay" style="display:none;">
+        <canvas id="hu-canvas" style="position:absolute; inset:0; pointer-events:none;"></canvas>
+        <div id="hu-main-text">胡牌</div>
+        <div id="hu-detail-text"></div>
+        <div id="hu-score-text"></div>
+        <div id="hu-formula-text"></div>
+        <div id="settle-panel"></div>
+    </div>
+
+    <div id="score-modal" class="rule-modal" data-modal-backdrop>
+        <div class="rule-content">
+            <div class="rule-header">
+                <span class="close-rule" data-close-modal="score-modal">&times;</span>
+                <h3>胡牌计分规则</h3>
+            </div>
+            <div class="rule-body">
+                <div class="rule-section">
+                    <b>一、基础底分</b><br>
+                    底分为 1 分。<br>
+                    <b>庄闲、自摸加成：</b><br>
+                    - 庄家赢：每家支付 ×2<br>
+                    - 庄家连庄：每连一次，倍率翻倍（×4、×8、×16…）<br>
+                    - 闲家赢：庄家支付 +1，其余闲家 ×1<br>
+                    - 自摸：在基础分上 +1<br>
+                    - 除抢杠胡点炮无惩罚。<br>
+                </div>
+                <div class="rule-section">
+                    <b>二、花牌加成</b><br>
+                    根据赢家花牌数量进行全局翻倍：<br>
+                    4 花为一水 ×2，5 花为二水 ×4，以此类推<br>
+                </div>
+                <div class="rule-section">
+                    <b>三、特殊胡牌（全部可叠加）</b><br>
+                    - 游金（手牌结构已满足 3n、一张金牌单钓做将，自摸任意牌胡牌）：×2<br>
+                    - 三金倒（手里三个金直接赢）：×8<br>
+                    - 天胡 / 地胡（第一巡胡牌）：×8<br>
+                    - 杠上开花（杠后补牌胡牌）：×2<br>
+                    - 花开富贵（补花后补牌胡牌）：×2<br>
+                    - 抢杠胡（他人暗杠或补杠时胡牌）：×2（仅杠者支付）<br>
+                </div>
+                <div class="rule-section">
+                    <b>四、计算方式</b><br>
+                    单家应付分 = （底分 × 庄倍率 + 自摸加成）<br>
+                    最终得分 = 单家应付分 × 水倍率 × 特殊倍率<br><br>
+                </div>
+                <div class="rule-section">
+                    <b>五、特殊得分（立即得分）</b><br>
+                    - 明杠、补杠：向其他三家各收取 1 分。<br>
+                    - 暗杠：向其他三家各收取 2 分。<br>
+                    - 吹风：庄家打出的前两手牌，若其他三家都跟着打出和庄家相同的牌，则庄家向所有闲家各给 1 分。<br><br>
+                    * 所有特殊番型均为乘法叠加。*
+                </div>
+                <p style="font-size: 11px; opacity: 0.7;">* 解释权归 HJC 所有，有问题可以反馈。</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="base-rule-modal" class="rule-modal" data-modal-backdrop>
+        <div class="rule-content">
+            <div class="rule-header">
+                <span class="close-rule" data-close-modal="base-rule-modal">&times;</span>
+                <h3>基础规则说明</h3>
+            </div>
+            <div class="rule-body">
+                <div class="rule-section">
+                    <b>一、牌型结构</b><br>
+                    万 / 筒 / 索 各 1-9，共 108 张，字牌 7 张各 4 张，花牌 8 张，总牌数：144 张。<br>
+                    开局翻一张牌作为“金牌”，所有相同牌都视为“金”，金牌可以当万能牌使用。<br>
+                    注：金牌不可参与吃、碰、杠。同时，白板作为金牌原本的身份使用。
+                </div>
+                <div class="rule-section">
+                    <b>二、初始设置</b><br>
+                    庄家初始为南家（你），庄家赢则连庄，庄家输则顺时针换庄。<br>
+                    发牌每人 16 张，庄家先摸第 17 张。
+                </div>
+                <div class="rule-section">
+                    <b>三、行牌</b><br>
+                    回合内摸一张牌，打一张牌。<br>
+                    操作（回合内外）：吃（仅上家）、碰、明杠、暗杠、补杠、胡
+                </div>
+                <div class="rule-section">
+                    <b>四、胡牌</b><br>
+                    符合 3n + 2 结构：4 组搭子（顺子/刻子/杠）+ 1 对将牌。可以自摸也可以点炮。<br>
+                    金牌可以代替任意牌完成结构。<br>
+                    注：持有双金时，只能自摸胡牌，不可点炮。
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="instant-score-modal" class="rule-modal instant-score-modal" data-modal-backdrop>
+        <div class="rule-content instant-score-content">
+            <div class="rule-header">
+                <span class="close-rule" data-close-modal="instant-score-modal">&times;</span>
+                <h3>即时分日志</h3>
+            </div>
+            <div class="rule-body">
+                <div id="instant-score-log" class="instant-score-log">
+                    <div class="instant-empty">等待牌局初始化...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./src/game-battle.js?v=20260318r34"></script>
+</body>
+</html>

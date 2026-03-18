@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漳州麻将联机大厅</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🀆</text></svg>">
+    <link rel="stylesheet" href="./styles/main.css?v=20260318r34">
+</head>
+<body class="lobby-screen">
+    <main class="page">
+        <section id="lobby-form-card" class="card">
+            <h1>联机大厅</h1>
+
+            <label class="field">
+                <span>昵称</span>
+                <input id="nickname-input" type="text" maxlength="16" placeholder="请输入昵称">
+            </label>
+
+            <div class="join-row">
+                <label class="field">
+                    <span>房间码</span>
+                    <input id="room-code-input" type="text" maxlength="6" placeholder="请输入 6 位房间码">
+                </label>
+                <div class="join-actions">
+                    <button id="create-room-btn" class="btn btn-primary" type="button">创建房间</button>
+                    <button id="join-room-btn" class="btn" type="button">加入房间</button>
+                </div>
+            </div>
+
+            <div id="debug-room-actions" class="actions row hidden" aria-hidden="true">
+                <button id="create-room-debug-btn" class="btn" type="button">创建调试房间</button>
+                <button id="join-room-debug-btn" class="btn" type="button">加入调试房间</button>
+            </div>
+
+            <p id="lobby-status" class="status"></p>
+        </section>
+
+        <section id="battle-room-panel" class="card battle-room-panel hidden">
+            <div class="battle-room-header">
+                <div>
+                    <h1>联机房间</h1>
+                    <p id="battle-room-meta" class="muted">等待房间状态同步...</p>
+                </div>
+                <div class="row">
+                    <button id="battle-start-btn" class="btn btn-primary" type="button">开始对局</button>
+                    <button id="battle-leave-btn" class="btn btn-danger" type="button">离开房间</button>
+                    <button id="battle-copy-room-btn" class="btn" type="button">复制房间码</button>
+                </div>
+            </div>
+
+            <div class="battle-seat-section">
+                <div id="battle-seat-board" class="battle-seat-board"></div>
+            </div>
+        </section>
+    </main>
+
+    <script type="module" src="./src/lobby.js?v=20260318r34"></script>
+</body>
+</html>
