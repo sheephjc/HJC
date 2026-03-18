@@ -1,4 +1,4 @@
-﻿import { createAction, ACTION_TYPES } from '../../漳麻单机版/src/shared/action-schema.js';
+import { createAction, ACTION_TYPES } from './shared/action-schema.js';
 import { getSelfDrawHuInfo, hasMandatorySanJinHu } from './online-game-engine.js';
 import { ensureAnonymousAuth, getFirebaseConfigStatus, hasFirebaseConfig } from './firebase-client.js';
 import { createPresentationEffects } from './presentation-effects.js';
@@ -1118,7 +1118,7 @@ async function handleSendAction() {
     try {
         payload = parseActionPayload(actionPayloadInput.value);
     } catch (error) {
-        setActionStatus(`payload JSON ʧ: ${error.message}`, true);
+        setActionStatus(`payload JSON ?: ${error.message}`, true);
         return;
     }
 
@@ -1366,6 +1366,7 @@ window.addEventListener('unload', () => {
 bootstrap().catch((error) => {
     setActionStatus(error.message || '页面初始化失败', true);
 });
+
 
 
 

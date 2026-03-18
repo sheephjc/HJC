@@ -1,4 +1,4 @@
-﻿import { createAction } from '../../漳麻单机版/src/shared/action-schema.js';
+import { createAction } from './shared/action-schema.js';
 import { getSelfDrawHuInfo, hasMandatorySanJinHu } from './online-game-engine.js';
 import { ensureAnonymousAuth, getFirebaseConfigStatus, hasFirebaseConfig } from './firebase-client.js';
 import { toTileEmoji } from './tile-display.js';
@@ -426,7 +426,7 @@ function renderTableOutcomeEffects() {
             loserArea.classList.add('lose-mark');
             const text = document.createElement('div');
             text.className = 'result-text lose-text';
-            text.textContent = '点炮 👎🏻';
+            text.textContent = '点炮 ????';
             loserArea.appendChild(text);
         }
     }
@@ -1803,3 +1803,4 @@ window.addEventListener('unload', () => {
 bootstrap().catch((error) => {
     setStatus(error.message || '实战页面初始化失败', true);
 });
+

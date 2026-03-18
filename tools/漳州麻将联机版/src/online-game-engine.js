@@ -1,4 +1,4 @@
-﻿import { evaluateHuInfo } from '../../漳麻单机版/src/shared/hu-rules.js';
+import { evaluateHuInfo } from './shared/hu-rules.js';
 const TILE_ORDER = Object.freeze({ W: 0, T: 1, S: 2, Z: 3, H: 4 });
 const SEAT_IDS = Object.freeze(['0', '1', '2', '3']);
 const CLAIM_TIMEOUT_MS = 5000;
@@ -1804,3 +1804,4 @@ export function getSelfDrawHuInfo(gameState, seatId) {
 export function hasMandatorySanJinHu(gameState, seatId) {
     return isMandatorySanJinHu(gameState, seatId);
 }
+
