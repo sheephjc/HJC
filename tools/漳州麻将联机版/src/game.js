@@ -110,6 +110,15 @@ function setActionStatus(text, isError = false) {
     targetEl.style.color = isError ? '#b91c1c' : '#1f2937';
 }
 
+function escapeHtml(value = '') {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function diagNowText() {
     return new Date().toLocaleTimeString('zh-CN', { hour12: false });
 }
@@ -220,7 +229,7 @@ function renderSyncDiagnostics() {
         <div class="diag-grid">
             <div class="diag-item">
                 <div class="diag-key"> uid</div>
-                <div class="diag-val">${hostShort}</div>
+                <div class="diag-val">${escapeHtml(hostShort)}</div>
             </div>
             <div class="diag-item">
                 <div class="diag-key">meta.version / game.version</div>
@@ -232,14 +241,14 @@ function renderSyncDiagnostics() {
             </div>
             <div class="diag-item">
                 <div class="diag-key">pendingClaim / 最近动作</div>
-                <div class="diag-val">${pending} / ${lastActionText}</div>
+                <div class="diag-val">${escapeHtml(pending)} / ${escapeHtml(lastActionText)}</div>
             </div>
         </div>
         <div class="diag-list">
-            <div class="diag-row${hasWarn ? ' warn' : ''}">现在 ${diagNowText()}</div>
+            <div class="diag-row${hasWarn ? ' warn' : ''}">现在 ${escapeHtml(diagNowText())}</div>
             ${events.length ? events.map((entry) => `
                 <div class="diag-row${entry.warn ? ' warn' : ''}">
-                    ${formatDiagTs(entry.ts)}  ${entry.text}
+                    ${escapeHtml(formatDiagTs(entry.ts))}  ${escapeHtml(entry.text)}
                 </div>
             `).join('') : '<div class="diag-row">暂无事件</div>'}
         </div>
@@ -485,12 +494,14 @@ function renderSeats() {
         if (seat.isBot) badges.push(seatBadge('AI', 'bot'));
         if (!seat.isBot && seat.control === 'bot') badges.push(seatBadge('AI托管', 'takeover'));
         if (isHostSeat) badges.push(seatBadge('房主', 'takeover'));
+        const nicknameText = escapeHtml(seat.nickname || '(匿名)');
+        const uidText = escapeHtml(seat.uid || '-');
 
         return `
             <article class="seat-card${isSelf ? ' self' : ''}${isHostSeat ? ' host' : ''}">
                 <strong>座位 ${Number(seatId) + 1}</strong>
-                <div>${seat.nickname || '(匿名)'}</div>
-                <div class="muted">uid: ${seat.uid || '-'}</div>
+                <div>${nicknameText}</div>
+                <div class="muted">uid: ${uidText}</div>
                 <div class="badges">${badges.join('')}</div>
             </article>
         `;
@@ -609,7 +620,7 @@ function renderTileChips(tiles = [], options = {}) {
             const classes = ['table-chip'];
             if (idx === highlightIndex) classes.push('last-discard');
             if (meldTile) classes.push('meld-tile');
-            return `<span class="${classes.join(' ')}">${tile}</span>`;
+            return `<span class="${classes.join(' ')}">${escapeHtml(tile)}</span>`;
         }).join('')
     }</div>`;
 }
@@ -619,7 +630,7 @@ function renderMeldList(groups = []) {
     return `<div class="meld-list">${
         groups.map((group) => `
             <div class="meld-item">
-                <div class="meld-type">${meldTypeLabel(group?.type)}</div>
+                <div class="meld-type">${escapeHtml(meldTypeLabel(group?.type))}</div>
                 ${renderTileChips(group?.tiles || [], { meldTile: true })}
             </div>
         `).join('')
@@ -675,13 +686,15 @@ function renderTableBoard() {
         const relativeLabel = getRelativeSeatLabel(Number(seatId), viewBaseSeat);
         const absoluteLabel = absoluteSeatName(seatId);
         const titleText = relativeLabel ? `${relativeLabel}（${absoluteLabel}）` : `（${absoluteLabel}）`;
+        const safeTitleText = escapeHtml(titleText);
+        const safeSeatNickname = escapeHtml(seat?.nickname || '(空位/AI座位)');
 
         return `
             <article class="${cardClasses.join(' ')}">
                 <div class="table-head">
                     <div>
-                        <div class="table-title">${titleText}</div>
-                        <div class="table-sub">${seat?.nickname || '(空位/AI座位)'}</div>
+                        <div class="table-title">${safeTitleText}</div>
+                        <div class="table-sub">${safeSeatNickname}</div>
                     </div>
                     <div class="badges">${badges.join('')}</div>
                 </div>
@@ -707,12 +720,14 @@ function renderTableBoard() {
     const goldTile = gameState.goldTile || '';
     const goldText = goldTile ? toTileEmoji(goldTile) : '?';
     const restCount = Array.isArray(gameState.wall) ? gameState.wall.length : 0;
+    const safeGoldText = escapeHtml(goldText);
+    const safeGoldTile = escapeHtml(goldTile || '-');
     const centerHtml = `
         <article class="table-center">
             <div class="table-center-title">桌面状态</div>
             <div class="table-center-label">金牌</div>
-            <div class="table-center-gold">${goldText}</div>
-            <div class="table-center-code">${goldTile || '-'}</div>
+            <div class="table-center-gold">${safeGoldText}</div>
+            <div class="table-center-code">${safeGoldTile}</div>
             <div class="table-center-rest">剩余 ${restCount}</div>
         </article>
     `;
@@ -758,8 +773,8 @@ function renderInstantScoreLog() {
 
     const rows = logs.slice(-10).reverse().map((entry) => `
         <div class="instant-row">
-            <div class="instant-title">${formatInstantType(entry)}  ${formatInstantTs(entry.ts)}</div>
-            <div class="instant-delta">${formatDeltaLine(entry.delta || [])}</div>
+            <div class="instant-title">${escapeHtml(formatInstantType(entry))}  ${escapeHtml(formatInstantTs(entry.ts))}</div>
+            <div class="instant-delta">${escapeHtml(formatDeltaLine(entry.delta || []))}</div>
         </div>
     `);
     instantScoreLogEl.innerHTML = rows.join('');
@@ -786,7 +801,7 @@ function renderOutcome() {
         payout.map((val, idx) => {
             const className = val >= 0 ? 'positive' : 'negative';
             const sign = val >= 0 ? '+' : '';
-            return `<div class="payout-row"><span>${seatName(idx)}</span><span class="payout-val ${className}">${sign}${val}</span></div>`;
+            return `<div class="payout-row"><span>${escapeHtml(seatName(idx))}</span><span class="payout-val ${className}">${sign}${val}</span></div>`;
         }).join('')
     }</div>`;
 
@@ -820,7 +835,7 @@ function renderReactionBar() {
         if (Array.isArray(options.CHI) && options.CHI.length) {
             options.CHI.forEach((choice) => {
                 const label = Array.isArray(choice) ? choice.join(' ') : '';
-                controls.push(`<button class="btn" data-reaction-type="CHI" data-reaction-choice='${JSON.stringify(choice)}'>吃 ${label}</button>`);
+                controls.push(`<button class="btn" data-reaction-type="CHI" data-reaction-choice="${escapeHtml(JSON.stringify(choice))}">吃 ${escapeHtml(label)}</button>`);
             });
         }
         controls.push(`<button class="btn" data-reaction-type="PASS">过</button>`);
@@ -847,7 +862,7 @@ function renderReactionBar() {
             countMap[tile] = (countMap[tile] || 0) + 1;
         });
         Object.keys(countMap).filter((tile) => countMap[tile] === 4).forEach((tile) => {
-            controls.push(`<button class="btn" data-turn-type="AN_GANG" data-turn-char="${tile}">暗杠 ${tile}</button>`);
+            controls.push(`<button class="btn" data-turn-type="AN_GANG" data-turn-char="${escapeHtml(tile)}">暗杠 ${escapeHtml(tile)}</button>`);
         });
 
         const showGroups = gameState.shows?.[seatId] || [];
@@ -858,7 +873,7 @@ function renderReactionBar() {
             if (hand.includes(tile)) buGangSet.add(tile);
         });
         [...buGangSet].forEach((tile) => {
-            controls.push(`<button class="btn" data-turn-type="BU_GANG" data-turn-char="${tile}">补杠 ${tile}</button>`);
+            controls.push(`<button class="btn" data-turn-type="BU_GANG" data-turn-char="${escapeHtml(tile)}">补杠 ${escapeHtml(tile)}</button>`);
         });
     }
 
@@ -914,7 +929,7 @@ function renderSelfHand() {
 
     selfHandEl.innerHTML = hand.map((tile, index) => {
         const selectedClass = selectedDiscardIndex === index ? ' selected' : '';
-        return `<button class=\"tile-btn${selectedClass}\" data-discard-index=\"${index}\" data-can-discard=\"${canDiscard ? '1' : '0'}\">${tile}</button>`;
+        return `<button class=\"tile-btn${selectedClass}\" data-discard-index=\"${index}\" data-can-discard=\"${canDiscard ? '1' : '0'}\">${escapeHtml(tile)}</button>`;
     }).join('');
 }
 
@@ -964,6 +979,43 @@ function stopHostLoop() {
     if (!hostLoopTimer) return;
     clearInterval(hostLoopTimer);
     hostLoopTimer = null;
+}
+
+function cleanupGameRuntime(options = {}) {
+    const disposePresentation = options.disposePresentation === true;
+
+    if (unsubscribeRoom) {
+        try {
+            unsubscribeRoom();
+        } catch {
+            // 忽略清理阶段异常，避免影响退出流程
+        }
+        unsubscribeRoom = null;
+    }
+
+    if (detachPresence) {
+        const detach = detachPresence;
+        detachPresence = null;
+        try {
+            const maybePromise = detach();
+            if (maybePromise && typeof maybePromise.catch === 'function') {
+                maybePromise.catch(() => {});
+            }
+        } catch {
+            // 忽略清理阶段异常，避免影响退出流程
+        }
+    }
+
+    stopHostLoop();
+
+    if (disposePresentation && presentationEffects) {
+        try {
+            presentationEffects.dispose();
+        } catch {
+            // 忽略清理阶段异常，避免影响退出流程
+        }
+        presentationEffects = null;
+    }
 }
 
 async function handleStartGame() {
@@ -1300,70 +1352,83 @@ async function bootstrap() {
         return;
     }
 
-    presentationEffects = createPresentationEffects({
-        toastEl: actionToastEl,
-        canvasEl: huCanvasEl,
-        outcomeCardEl,
-        getSeatName: (seatId) => seatName(String(seatId))
-    });
-    presentationEffects.bindUnlockEvents();
+    try {
+        presentationEffects = createPresentationEffects({
+            toastEl: actionToastEl,
+            canvasEl: huCanvasEl,
+            outcomeCardEl,
+            getSeatName: (seatId) => seatName(String(seatId))
+        });
+        presentationEffects.bindUnlockEvents();
 
-    unsubscribeRoom = subscribeRoom(roomCode, async (room) => {
-        const prevRoomState = roomState;
-        roomState = room;
-        if (!roomState) {
-            setActionStatus('房间不存在或已关闭', true);
-            return;
-        }
-        updateSyncDiagnostics(prevRoomState, roomState);
-        render();
-        presentationEffects?.handleStateUpdate(prevRoomState, roomState);
-        try {
-            const election = await tryElectHost(roomCode, session.uid, roomState);
-            if (election?.attempted && election?.committed) {
-                pushDiagEvent(`host竞选成功 -> ${String(session.uid || '').slice(0, 8)}`);
-            } else if (election?.reason === 'permission-denied') {
-                pushDiagEvent('host竞选被拒: permission_denied', true);
+        unsubscribeRoom = subscribeRoom(roomCode, async (room) => {
+            const prevRoomState = roomState;
+            roomState = room;
+            if (!roomState) {
+                setActionStatus('房间不存在或已关闭', true);
+                return;
             }
-        } catch (error) {
-            pushDiagEvent(`host竞选异常: ${error.message || error}`, true);
-        }
-    });
+            updateSyncDiagnostics(prevRoomState, roomState);
+            render();
+            presentationEffects?.handleStateUpdate(prevRoomState, roomState);
+            try {
+                const election = await tryElectHost(roomCode, session.uid, roomState);
+                if (election?.attempted && election?.committed) {
+                    pushDiagEvent(`host竞选成功 -> ${String(session.uid || '').slice(0, 8)}`);
+                } else if (election?.reason === 'permission-denied') {
+                    pushDiagEvent('host竞选被拒: permission_denied', true);
+                }
+            } catch (error) {
+                pushDiagEvent(`host竞选异常: ${error.message || error}`, true);
+            }
+        });
 
-    detachPresence = await attachPresence(roomCode, session.uid, session.seatId, session.nickname);
+        detachPresence = await attachPresence(roomCode, session.uid, session.seatId, session.nickname);
 
-    startGameBtn?.addEventListener('click', handleStartGame);
-    startSingleGoldBtn?.addEventListener('click', () => handleForcedGoldStart(1));
-    startDoubleGoldBtn?.addEventListener('click', () => handleForcedGoldStart(2));
-    startTripleGoldBtn?.addEventListener('click', () => handleForcedGoldStart(3));
-    copyRoomCodeBtn?.addEventListener('click', handleCopyRoomCode);
-    leaveRoomBtn?.addEventListener('click', handleLeaveRoom);
-    debugModeToggleEl?.addEventListener('change', handleDebugModeToggle);
-    applyDebugPresetBtn?.addEventListener('click', handleApplyDebugPreset);
-    copyDiagnosticsBtn?.addEventListener('click', handleCopyDiagnostics);
-    sendActionBtn?.addEventListener('click', handleSendAction);
-    selfHandEl?.addEventListener('click', handleSelfHandClick);
-    selfHandEl?.addEventListener('contextmenu', handleSelfHandContextMenu);
-    reactionBarEl?.addEventListener('click', handleReactionBarClick);
-    nextRoundBtn?.addEventListener('click', handleNextRound);
+        startGameBtn?.addEventListener('click', handleStartGame);
+        startSingleGoldBtn?.addEventListener('click', () => handleForcedGoldStart(1));
+        startDoubleGoldBtn?.addEventListener('click', () => handleForcedGoldStart(2));
+        startTripleGoldBtn?.addEventListener('click', () => handleForcedGoldStart(3));
+        copyRoomCodeBtn?.addEventListener('click', handleCopyRoomCode);
+        leaveRoomBtn?.addEventListener('click', handleLeaveRoom);
+        debugModeToggleEl?.addEventListener('change', handleDebugModeToggle);
+        applyDebugPresetBtn?.addEventListener('click', handleApplyDebugPreset);
+        copyDiagnosticsBtn?.addEventListener('click', handleCopyDiagnostics);
+        sendActionBtn?.addEventListener('click', handleSendAction);
+        selfHandEl?.addEventListener('click', handleSelfHandClick);
+        selfHandEl?.addEventListener('contextmenu', handleSelfHandContextMenu);
+        reactionBarEl?.addEventListener('click', handleReactionBarClick);
+        nextRoundBtn?.addEventListener('click', handleNextRound);
 
-    ensureHostLoop();
-    setActionStatus('已进入房间，等待对局开始。');
+        ensureHostLoop();
+        setActionStatus('已进入房间，等待对局开始。');
+    } catch (error) {
+        cleanupGameRuntime({ disposePresentation: true });
+        throw error;
+    }
 
     window.addEventListener('beforeunload', () => {
         if (detachPresence) {
-            detachPresence();
+            const detach = detachPresence;
+            detachPresence = null;
+            try {
+                const maybePromise = detach();
+                if (maybePromise && typeof maybePromise.catch === 'function') {
+                    maybePromise.catch(() => {});
+                }
+            } catch {
+                // beforeunload 中不抛出清理异常
+            }
         }
     });
 }
 
 window.addEventListener('unload', () => {
-    if (unsubscribeRoom) unsubscribeRoom();
-    stopHostLoop();
-    presentationEffects?.dispose();
+    cleanupGameRuntime({ disposePresentation: true });
 });
 
 bootstrap().catch((error) => {
+    cleanupGameRuntime({ disposePresentation: true });
     setActionStatus(error.message || '页面初始化失败', true);
 });
 

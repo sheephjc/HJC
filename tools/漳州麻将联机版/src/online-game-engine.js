@@ -656,6 +656,9 @@ function settleWin(state, { winnerSeat, loserSeat = null, isSelfDraw, reason, wi
         isSelfDraw: !!isSelfDraw,
         winTile: winTile || null,
         specialTypes: Array.isArray(specialTypes) ? [...specialTypes] : [],
+        flowerCount,
+        waterMul,
+        scoreAsSelfDraw: !!scoreAsSelfDraw,
         totalWin,
         delta,
         ts: now

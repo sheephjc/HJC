@@ -34,6 +34,29 @@ const CLAIM_PRIORITY = Object.freeze({
     GANG: 1,
     CHI: 2
 });
+const WATER_NUM_CN = Object.freeze(['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十']);
+const SPECIAL_MULTIPLIER_MAP = Object.freeze({
+    '游金': 2,
+    '三金倒': 8,
+    '天胡': 8,
+    '地胡': 8,
+    '杠上开花': 2,
+    '花开富贵': 2,
+    '抢杠胡': 2
+});
+const OUTCOME_TEXT_EFFECT_CLASS_LIST = Object.freeze([
+    'hu-gold-pulse',
+    'hu-super-gold',
+    'hu-red-glow',
+    'hu-blue-wave',
+    'hu-purple-flash',
+    'hu-shake-strong'
+]);
+const OUTCOME_OVERLAY_EFFECT_CLASS_LIST = Object.freeze([
+    'flash-gold',
+    'flash-red',
+    'flash-blue'
+]);
 const ACTION_SFX_MAP = Object.freeze({
     DISCARD: { f: 300, d: 0.045, wave: 'square' },
     OPEN_GOLD: { f: 560, d: 0.12, wave: 'sine' },
@@ -351,10 +374,6 @@ function isHost() {
     return !!(roomState && session && roomState.meta?.hostUid === session.uid);
 }
 
-function isPlaying() {
-    return (roomState?.meta?.status || 'waiting') === 'playing';
-}
-
 function getGameState() {
     return roomState?.game?.state || null;
 }
@@ -392,6 +411,169 @@ function isGoldRevealed(gameState = getGameState()) {
     return gameState?.goldRevealed !== false;
 }
 
+function getWaterCountFromOutcome(outcome = null) {
+    const flowerCount = Number(outcome?.flowerCount || 0);
+    if (Number.isInteger(flowerCount) && flowerCount >= 4) {
+        return flowerCount - 3;
+    }
+    const waterMul = Number(outcome?.waterMul || 1);
+    if (waterMul > 1) {
+        const power = Math.log2(waterMul);
+        if (Number.isInteger(power) && power > 0) return power;
+    }
+    return 0;
+}
+
+function normalizeSpecialTypes(specialTypes = []) {
+    const list = Array.isArray(specialTypes)
+        ? specialTypes.filter((type) => typeof type === 'string' && type.trim())
+        : [];
+    if (list.includes('三金倒')) {
+        return list.filter((type) => type !== '游金');
+    }
+    return list;
+}
+
+function waterTextByCount(count = 0) {
+    if (!Number.isInteger(count) || count <= 0) return '';
+    const cn = WATER_NUM_CN[count] || String(count);
+    return `${cn}水`;
+}
+
+function buildOutcomeHeadline(outcome = null) {
+    if (!outcome || typeof outcome !== 'object') return '';
+    const parts = [];
+    const waterCount = getWaterCountFromOutcome(outcome);
+    const waterText = waterTextByCount(waterCount);
+    if (waterText) parts.push(waterText);
+    normalizeSpecialTypes(outcome.specialTypes).forEach((type) => parts.push(type));
+    parts.push(outcome.isSelfDraw ? '自摸' : '点炮');
+    return parts.join(' ').trim();
+}
+
+function buildOutcomeMultiplierLabels(outcome = null) {
+    if (!outcome || typeof outcome !== 'object') return [];
+    const labels = [];
+    const waterCount = getWaterCountFromOutcome(outcome);
+    const waterMul = Number(outcome.waterMul || 1);
+    if (waterCount > 0 && waterMul > 1) {
+        labels.push(`×${waterMul}${waterTextByCount(waterCount)}`);
+    }
+
+    normalizeSpecialTypes(outcome.specialTypes).forEach((type) => {
+        const mul = Number(SPECIAL_MULTIPLIER_MAP[type] || 1);
+        if (mul > 1) labels.push(`×${mul}${type}`);
+    });
+    return labels;
+}
+
+function applyOutcomeTextEffectClasses(el, outcome = null) {
+    if (!el) return;
+    OUTCOME_TEXT_EFFECT_CLASS_LIST.forEach((className) => el.classList.remove(className));
+    if (!outcome || typeof outcome !== 'object') return;
+
+    const specialTypes = normalizeSpecialTypes(outcome.specialTypes);
+    const waterCount = getWaterCountFromOutcome(outcome);
+    const dealerStreakAfter = Number(outcome.dealerStreakAfter || 0);
+
+    if (waterCount > 0) el.classList.add('hu-blue-wave');
+    if (dealerStreakAfter >= 2) el.classList.add('hu-shake-strong');
+    if (specialTypes.includes('游金')) el.classList.add('hu-gold-pulse');
+    if (specialTypes.includes('三金倒')) {
+        el.classList.add('hu-super-gold');
+        el.classList.add('hu-shake-strong');
+    }
+    if (specialTypes.includes('天胡') || specialTypes.includes('地胡')) el.classList.add('hu-red-glow');
+    if (specialTypes.includes('杠上开花') || specialTypes.includes('花开富贵')) el.classList.add('hu-gold-pulse');
+    if (specialTypes.includes('抢杠胡')) el.classList.add('hu-purple-flash');
+}
+
+function applyOutcomeOverlayEffectClasses(overlay, outcome = null) {
+    if (!overlay) return;
+    OUTCOME_OVERLAY_EFFECT_CLASS_LIST.forEach((className) => overlay.classList.remove(className));
+    if (!outcome || typeof outcome !== 'object') return;
+
+    const specialTypes = normalizeSpecialTypes(outcome.specialTypes);
+    const waterCount = getWaterCountFromOutcome(outcome);
+    if (specialTypes.includes('三金倒')) overlay.classList.add('flash-gold');
+    if (specialTypes.includes('天胡') || specialTypes.includes('地胡')) overlay.classList.add('flash-red');
+    if (waterCount >= 2) overlay.classList.add('flash-blue');
+}
+
+function fitTextToSingleLine(el, options = {}) {
+    if (!el) return;
+    const text = String(el.textContent || '').trim();
+    if (!text) return;
+
+    const minPx = Math.max(10, Number(options.minPx || 12));
+    const widthRatio = Number(options.widthRatio || 0.94);
+    const clipOverflow = options.clipOverflow !== false;
+    const maxPx = Number(options.maxPx || parseFloat(window.getComputedStyle(el).fontSize || '16'));
+    const container = options.container || el.parentElement || document.body;
+    const containerWidth = Number(container?.clientWidth || window.innerWidth || 0);
+    if (!containerWidth) return;
+    const targetWidth = Math.max(40, Math.floor(containerWidth * widthRatio));
+
+    el.style.whiteSpace = 'nowrap';
+    el.style.maxWidth = `${targetWidth}px`;
+    el.style.overflow = clipOverflow ? 'hidden' : 'visible';
+    el.style.textOverflow = clipOverflow ? 'clip' : 'unset';
+    el.style.fontSize = `${maxPx}px`;
+
+    let fontSize = maxPx;
+    while (fontSize > minPx && el.scrollWidth > targetWidth) {
+        fontSize -= 1;
+        el.style.fontSize = `${fontSize}px`;
+    }
+}
+
+function fitOutcomeOverlayText() {
+    if (!huOverlayEl || huOverlayEl.style.display === 'none') return;
+    fitTextToSingleLine(huMainTextEl, { minPx: 20, widthRatio: 0.92, container: huOverlayEl, clipOverflow: false });
+    fitTextToSingleLine(huScoreTextEl, { minPx: 12, widthRatio: 0.94, container: huOverlayEl });
+}
+
+function getTableEffectLayer() {
+    const table = document.getElementById('table');
+    if (!table) return null;
+    let layer = document.getElementById('table-effect-layer');
+    if (layer) return layer;
+    layer = document.createElement('div');
+    layer.id = 'table-effect-layer';
+    table.appendChild(layer);
+    return layer;
+}
+
+function placeEffectAtSeat(effectEl, seatId, options = {}) {
+    if (!effectEl) return false;
+    const layer = getTableEffectLayer();
+    const table = document.getElementById('table');
+    if (!layer || !table) return false;
+
+    const pos = getPosBySeat(getViewerBaseSeat(), Number(seatId));
+    const area = document.getElementById(`p-${pos}`);
+    if (!area) return false;
+
+    const tableRect = table.getBoundingClientRect();
+    const areaRect = area.getBoundingClientRect();
+    const x = areaRect.left - tableRect.left + (areaRect.width * 0.5);
+    const yRatio = Number.isFinite(Number(options.verticalRatio)) ? Number(options.verticalRatio) : 0.48;
+    const y = areaRect.top - tableRect.top + (areaRect.height * Math.min(0.92, Math.max(0.08, yRatio)));
+
+    effectEl.style.position = 'absolute';
+    effectEl.style.left = `${Math.round(x)}px`;
+    effectEl.style.top = `${Math.round(y)}px`;
+    layer.appendChild(effectEl);
+    return true;
+}
+
+function getSeatTextRotationDegByPos(pos = 'bottom') {
+    if (pos === 'top') return 180;
+    if (pos === 'left') return 90;
+    if (pos === 'right') return -90;
+    return 0;
+}
+
 function clearTurnHighlight() {
     PLAYER_POS.forEach((pos) => {
         const area = document.getElementById(`p-${pos}`);
@@ -407,10 +589,8 @@ function clearTableOutcomeEffects() {
 }
 
 function outcomeWinnerTableText(outcome = null) {
-    const specialTypes = Array.isArray(outcome?.specialTypes) ? outcome.specialTypes : [];
-    if (specialTypes.includes('游金')) return '游金';
-    if (specialTypes.includes('三金倒')) return '三金倒';
-    return outcome?.isSelfDraw ? '自摸' : '胡牌';
+    const headline = buildOutcomeHeadline(outcome);
+    return headline || (outcome?.isSelfDraw ? '自摸' : '点炮');
 }
 
 function renderTableOutcomeEffects() {
@@ -437,8 +617,13 @@ function renderTableOutcomeEffects() {
         winnerArea.classList.add('win-mark');
         const text = document.createElement('div');
         text.className = 'result-text';
+        text.style.setProperty('--seat-rotate', `${getSeatTextRotationDegByPos(winnerPos)}deg`);
         text.textContent = outcomeWinnerTableText(outcome);
-        winnerArea.appendChild(text);
+        applyOutcomeTextEffectClasses(text, outcome);
+        if (!placeEffectAtSeat(text, outcome.winner, { verticalRatio: 0.5 })) {
+            winnerArea.appendChild(text);
+        }
+        fitTextToSingleLine(text, { minPx: 12, widthRatio: 0.9, container: winnerArea });
     }
 
     if (!outcome.isSelfDraw && Number.isInteger(Number(outcome.loser))) {
@@ -448,8 +633,11 @@ function renderTableOutcomeEffects() {
             loserArea.classList.add('lose-mark');
             const text = document.createElement('div');
             text.className = 'result-text lose-text';
+            text.style.setProperty('--seat-rotate', `${getSeatTextRotationDegByPos(loserPos)}deg`);
             text.textContent = '点炮 👎🏻';
-            loserArea.appendChild(text);
+            if (!placeEffectAtSeat(text, outcome.loser, { verticalRatio: 0.5 })) {
+                loserArea.appendChild(text);
+            }
         }
     }
 }
@@ -522,25 +710,35 @@ function renderTileHtml(tile, options = {}) {
     if (options.selected) classes.push('selected');
     if (options.isGold) classes.push('is-gold');
     if (options.newDraw) classes.push('new-draw');
+    if (options.drawSeparated) classes.push('draw-separated');
     if (options.winning) classes.push('winning');
     const attrs = [];
     if (Number.isInteger(options.discardIndex)) {
         attrs.push(`data-discard-index="${options.discardIndex}"`);
         attrs.push(`data-can-discard="${options.canDiscard ? '1' : '0'}"`);
     }
-    const titleAttr = options.back ? '' : `title="${tile}"`;
-    return `<div class="${classes.join(' ')}" ${titleAttr} ${attrs.join(' ')}>${options.back ? '' : toTileEmoji(tile)}</div>`;
+    const tileCode = String(tile ?? '');
+    const titleAttr = options.back ? '' : `title="${escapeHtml(tileCode)}"`;
+    const tileText = options.back ? '' : escapeHtml(toTileEmoji(tileCode));
+    return `<div class="${classes.join(' ')}" ${titleAttr} ${attrs.join(' ')}>${tileText}</div>`;
 }
 
 function renderGroupHtml(group = {}) {
     const tiles = Array.isArray(group.tiles) ? group.tiles : [];
-    const tileHtml = tiles.map((tile) => `<div class="tile" title="${tile}">${toTileEmoji(tile)}</div>`).join('');
-    return `<div class="group" title="${group.type || ''}">${tileHtml}</div>`;
+    const tileHtml = tiles.map((tile) => {
+        const tileCode = String(tile ?? '');
+        return `<div class="tile" title="${escapeHtml(tileCode)}">${escapeHtml(toTileEmoji(tileCode))}</div>`;
+    }).join('');
+    const groupType = escapeHtml(group.type || '');
+    return `<div class="group" title="${groupType}">${tileHtml}</div>`;
 }
 
 function renderFlowerGroupHtml(tiles = []) {
     if (!Array.isArray(tiles) || !tiles.length) return '';
-    const tileHtml = tiles.map((tile) => `<div class="tile" title="${tile}">${toTileEmoji(tile)}</div>`).join('');
+    const tileHtml = tiles.map((tile) => {
+        const tileCode = String(tile ?? '');
+        return `<div class="tile" title="${escapeHtml(tileCode)}">${escapeHtml(toTileEmoji(tileCode))}</div>`;
+    }).join('');
     return `<div class="group" title="花牌">${tileHtml}</div>`;
 }
 
@@ -598,7 +796,18 @@ function renderSeatArea(pos, seatId, gameState, canDiscard, delayReplacementDraw
 
     if (handEl) {
         if (revealHand) {
-            handEl.innerHTML = hand.map((tile, index) => renderTileHtml(tile, {
+            const shouldMoveDrawToTail = pos === 'bottom'
+                && drawHighlightIndex >= 0
+                && gameState?.phase === 'playing'
+                && !!currentDraw
+                && Number(currentDraw.seatId) === Number(seatId);
+            const handEntries = hand.map((tile, index) => ({ tile, index }));
+            if (shouldMoveDrawToTail) {
+                const [drawEntry] = handEntries.splice(drawHighlightIndex, 1);
+                if (drawEntry) handEntries.push(drawEntry);
+            }
+
+            handEl.innerHTML = handEntries.map(({ tile, index }) => renderTileHtml(tile, {
                 back: delayReplacementDraw && index === drawHighlightIndex,
                 discardIndex: pos === 'bottom' ? index : undefined,
                 canDiscard: pos === 'bottom' ? (canDiscard && !(delayReplacementDraw && index === drawHighlightIndex)) : false,
@@ -606,6 +815,7 @@ function renderSeatArea(pos, seatId, gameState, canDiscard, delayReplacementDraw
                 selected: pos === 'bottom' && selectedDiscardIndex === index,
                 isGold: pos === 'bottom' && tile === gameState?.goldTile,
                 newDraw: index === drawHighlightIndex && !delayReplacementDraw,
+                drawSeparated: shouldMoveDrawToTail && index === drawHighlightIndex,
                 winning: index === winningHighlightIndex
             })).join('');
         } else {
@@ -940,17 +1150,18 @@ function showActionEffect(seatId, actionType = '') {
     const text = actionEffectText(actionType);
     if (!text) return;
 
-    const pos = getPosBySeat(getViewerBaseSeat(), Number(seatId));
-    const area = document.getElementById(`p-${pos}`);
-    if (!area) return;
-
     const effect = document.createElement('div');
     effect.className = 'action-effect';
     if (actionType === 'FLOWER_REPLENISH') {
         effect.classList.add('flower');
     }
     effect.textContent = text;
-    area.appendChild(effect);
+    if (!placeEffectAtSeat(effect, seatId, { verticalRatio: 0.46 })) {
+        const pos = getPosBySeat(getViewerBaseSeat(), Number(seatId));
+        const area = document.getElementById(`p-${pos}`);
+        if (!area) return;
+        area.appendChild(effect);
+    }
     setTimeout(() => effect.remove(), 850);
 }
 
@@ -1043,10 +1254,11 @@ function chuiFengCueKey(gameState = null) {
 function showChuiFengEffect() {
     const table = document.getElementById('table');
     if (!table) return;
+    const layer = getTableEffectLayer() || table;
     const effect = document.createElement('div');
     effect.className = 'chui-feng-effect';
     effect.textContent = '吹风';
-    table.appendChild(effect);
+    layer.appendChild(effect);
     setTimeout(() => effect.remove(), 1000);
 }
 
@@ -1112,8 +1324,8 @@ function syncGoldRevealEffect(gameState = null, primeOnly = false) {
 }
 
 function buildActionButton(label, attrs = {}) {
-    const pairs = Object.entries(attrs).map(([k, v]) => `${k}="${String(v).replace(/"/g, '&quot;')}"`).join(' ');
-    return `<button class="btn-act" ${pairs}>${label}</button>`;
+    const pairs = Object.entries(attrs).map(([k, v]) => `${k}="${escapeHtml(v)}"`).join(' ');
+    return `<button class="btn-act" ${pairs}>${escapeHtml(label)}</button>`;
 }
 
 function parseTileCodeForSort(tile = '') {
@@ -1149,13 +1361,14 @@ function buildChiChoiceButton(choice = [], discardTile = '', goldTile = '') {
     }
     if (discardTile) tiles.push(String(discardTile));
     const orderedTiles = sortTileCodesForDisplay(tiles).slice(0, 3);
+    const choicePayload = escapeHtml(JSON.stringify(choice));
     if (orderedTiles.length === 3) {
         const chips = orderedTiles.map((tileCode) => `
-            <span class="chi-option-tile${tileCode === goldTile ? ' is-gold' : ''}">${toTileEmoji(tileCode)}</span>
+            <span class="chi-option-tile${tileCode === goldTile ? ' is-gold' : ''}">${escapeHtml(toTileEmoji(tileCode))}</span>
         `).join('');
-        return `<button class="btn-act chi-option-btn" data-reaction-type="CHI" data-reaction-choice='${JSON.stringify(choice)}'><span class="chi-option-tiles">${chips}</span></button>`;
+        return `<button class="btn-act chi-option-btn" data-reaction-type="CHI" data-reaction-choice="${choicePayload}"><span class="chi-option-tiles">${chips}</span></button>`;
     }
-    return `<button class="btn-act chi-option-btn" data-reaction-type="CHI" data-reaction-choice='${JSON.stringify(choice)}'>吃</button>`;
+    return `<button class="btn-act chi-option-btn" data-reaction-type="CHI" data-reaction-choice="${choicePayload}">吃</button>`;
 }
 
 function renderActionBar() {
@@ -1273,7 +1486,13 @@ function formatInstantType(entry = {}) {
     if (entry.type === 'MING_GANG') return `明/补杠 ${seatText}`;
     if (entry.type === 'HU_SETTLE') {
         const winner = Number.isInteger(entry.winnerSeat) ? getInstantSeatLabel(entry.winnerSeat) : seatText;
-        return `胡牌结算 ${winner}`;
+        const headline = buildOutcomeHeadline({
+            isSelfDraw: !!entry.isSelfDraw,
+            specialTypes: Array.isArray(entry.specialTypes) ? entry.specialTypes : [],
+            flowerCount: Number(entry.flowerCount || 0),
+            waterMul: Number(entry.waterMul || 1)
+        });
+        return headline ? `胡牌结算 ${winner} ${headline}` : `胡牌结算 ${winner}`;
     }
     if (entry.type === 'CHUI_FENG') {
         const tileText = entry.targetTile ? ` ${toTileEmoji(entry.targetTile)}` : '';
@@ -1313,8 +1532,8 @@ function renderInstantScoreLog() {
 
     const rows = logs.slice().reverse().map((entry) => `
         <div class="instant-row">
-            <div class="instant-type">${formatInstantRound(entry)} · ${formatInstantType(entry)} · ${formatInstantTs(entry.ts)}</div>
-            <div class="instant-delta">${formatInstantDeltaLine(entry.delta || [])}</div>
+            <div class="instant-type">${escapeHtml(formatInstantRound(entry))} · ${escapeHtml(formatInstantType(entry))} · ${escapeHtml(formatInstantTs(entry.ts))}</div>
+            <div class="instant-delta">${escapeHtml(formatInstantDeltaLine(entry.delta || []))}</div>
         </div>
     `);
     instantScoreLogEl.innerHTML = rows.join('');
@@ -1333,14 +1552,12 @@ function buildOutcomeFormulaText(outcome = null) {
     const loser = Number(outcome.loser);
     const dealer = Number(outcome.dealerBefore);
     const streak = Number(outcome.dealerStreakBefore || 0);
-    const waterMul = Number(outcome.waterMul || 1);
-    const specialMul = Number(outcome.specialMul || 1);
     const total = Math.floor(Number(outcome.totalWin || 0));
     const scoreAsSelfDraw = !!outcome.scoreAsSelfDraw;
     const isQiangGangHu = Array.isArray(outcome.specialTypes) && outcome.specialTypes.includes('抢杠胡');
     const winnerIsDealer = winner === dealer;
-    const waterStr = waterMul > 1 ? `×${waterMul}` : '';
-    const specialStr = specialMul > 1 ? `×${specialMul}` : '';
+    const multiplierLabels = buildOutcomeMultiplierLabels(outcome);
+    const multiplierSuffix = multiplierLabels.length ? ` ${multiplierLabels.join(' ')}` : '';
 
     if (isQiangGangHu && Number.isInteger(loser) && loser >= 0 && loser <= 3) {
         let basePay = 1;
@@ -1350,25 +1567,21 @@ function buildOutcomeFormulaText(outcome = null) {
         } else {
             basePay = loser === dealer ? 2 : 1;
         }
-        return `${basePay}${waterStr}${specialStr} = ${total}`;
+        return `${basePay}底×1点炮家${multiplierSuffix} = ${total}`;
     }
 
     if (winnerIsDealer) {
         const dealerMul = streak >= 1 ? Math.pow(2, streak) : 1;
         const baseMul = dealerMul * 2;
-        let formula = `(1×${baseMul}`;
-        if (scoreAsSelfDraw) formula += '+1';
-        formula += ')';
-        if (waterMul > 1) formula += `×${waterMul}`;
-        if (specialMul > 1) formula += `×${specialMul}`;
-        formula += `×3 = ${total}`;
-        return formula;
+        const basePart = scoreAsSelfDraw
+            ? `(1底×${baseMul}庄家+1自摸)×3闲家`
+            : `(1底×${baseMul}庄家)×3闲家`;
+        return `${basePart}${multiplierSuffix} = ${total}`;
     }
 
     const baseStr = scoreAsSelfDraw ? '1底+1自摸' : '1底';
-    const left = `(${baseStr})${waterStr}${specialStr}×2闲家`;
-    const right = `(${baseStr}+1庄)${waterStr}${specialStr}×1庄家`;
-    return `${left} + ${right} = ${total}`;
+    const basePart = `(${baseStr})×2闲家 + (${baseStr}+1庄)×1庄家`;
+    return `${basePart}${multiplierSuffix} = ${total}`;
 }
 
 function renderOutcome() {
@@ -1401,35 +1614,40 @@ function renderOutcome() {
 
     const payout = Array.isArray(outcome.payout) ? outcome.payout : [];
 
-    const winnerName = getSettlementSeatLabel(outcome.winner);
-    const loserName = Number.isInteger(Number(outcome.loser)) ? seatNameAbsolute(outcome.loser) : '';
-    const winMethodText = outcome.isSelfDraw ? '' : `${loserName}`;
-    const specialTypeText = Array.isArray(outcome.specialTypes) && outcome.specialTypes.length
-        ? outcome.specialTypes.join('')
-        : '普通胡';
-    const waterMul = Number(outcome.waterMul || 1);
-    const rawSpecialMul = Number(outcome.rawSpecialMul || outcome.specialMul || 1);
-    const specialMul = Number(outcome.specialMul || rawSpecialMul || 1);
-
-    if (huMainTextEl) huMainTextEl.textContent = `${winnerName} ${outcome.isSelfDraw ? '自摸' : '点炮胡'}`;
-    if (huDetailTextEl) {
-        huDetailTextEl.textContent = ` 番型：${specialTypeText}`;
-    }
+    const headline = buildOutcomeHeadline(outcome);
+    const winnerNickname = getSeatNickname(outcome.winner);
     const outcomeFormula = buildOutcomeFormulaText(outcome);
-    if (huScoreTextEl) huScoreTextEl.textContent = outcomeFormula;
-    if (huFormulaTextEl) {
-        huFormulaTextEl.textContent = `水倍 x${waterMul} | 特殊倍 x${rawSpecialMul}${rawSpecialMul !== specialMul ? ` x${specialMul}` : ''} | 赢家总赢 +${Math.floor(Number(outcome.totalWin || 0))}`;
+
+    if (huMainTextEl) {
+        const mainHeadline = headline || (outcome.isSelfDraw ? '自摸' : '点炮');
+        const panelHeadline = outcome.isSelfDraw ? mainHeadline : mainHeadline.replace(/点炮$/, '点炮胡');
+        huMainTextEl.textContent = `${winnerNickname} ${panelHeadline}`.trim();
+        applyOutcomeTextEffectClasses(huMainTextEl, outcome);
     }
+    if (huDetailTextEl) {
+        huDetailTextEl.textContent = '';
+    }
+    if (huScoreTextEl) {
+        huScoreTextEl.textContent = outcomeFormula;
+    }
+    if (huFormulaTextEl) {
+        huFormulaTextEl.textContent = '';
+    }
+    applyOutcomeOverlayEffectClasses(huOverlayEl, outcome);
 
     if (settlePanelEl) {
+        const totalScores = Array.isArray(gameState?.scores) ? gameState.scores : [0, 0, 0, 0];
         const lines = [0, 1, 2, 3].map((seatId) => {
             const value = Number(payout[seatId] || 0);
+            const totalScore = Math.floor(Number(totalScores[seatId] || 0));
             const className = value >= 0 ? 'settle-plus' : 'settle-minus';
             const sign = value >= 0 ? '+' : '';
-            return `<div class="settle-row"><span class="settle-name">${getSettlementSeatLabel(seatId)}</span><span class="settle-score ${className}">${sign}${value}</span></div>`;
+            const totalSign = totalScore >= 0 ? '+' : '';
+            const seatLabel = escapeHtml(getSettlementSeatLabel(seatId));
+            return `<div class="settle-row"><span class="settle-name">${seatLabel}</span><span class="settle-score ${className}">${sign}${value}</span><span class="settle-total">${totalSign}${totalScore}</span></div>`;
         }).join('');
 
-        settlePanelEl.innerHTML = `<div class="settle-title">本局结算</div>${lines}<div class="settle-tip">点击屏幕可关闭</div>`;
+        settlePanelEl.innerHTML = `<div class="settle-title">四家分数结算</div><div class="settle-head"><span class="settle-name"></span><span class="settle-head-cell">本局得失</span><span class="settle-head-cell">总分</span></div>${lines}<div class="settle-tip">点击屏幕可关闭</div>`;
     }
 
     if (dismissedOutcomeKey === key) {
@@ -1438,6 +1656,8 @@ function renderOutcome() {
     }
 
     huOverlayEl.style.display = 'flex';
+    fitOutcomeOverlayText();
+    requestAnimationFrame(() => fitOutcomeOverlayText());
 }
 
 function render() {
@@ -1746,6 +1966,55 @@ function stopHostLoop() {
     hostLoopTimer = null;
 }
 
+function cleanupBattleRuntime(options = {}) {
+    const disposeGuard = options.disposeGuard === true;
+
+    if (unsubscribeRoom) {
+        try {
+            unsubscribeRoom();
+        } catch {
+            // 忽略清理阶段异常，避免影响后续退出链路
+        }
+        unsubscribeRoom = null;
+    }
+
+    if (detachPresence) {
+        const detach = detachPresence;
+        detachPresence = null;
+        try {
+            const maybePromise = detach();
+            if (maybePromise && typeof maybePromise.catch === 'function') {
+                maybePromise.catch(() => {});
+            }
+        } catch {
+            // 忽略清理阶段异常，避免影响后续退出链路
+        }
+    }
+
+    stopHostLoop();
+
+    if (replacementDrawRevealTimer) {
+        clearTimeout(replacementDrawRevealTimer);
+        replacementDrawRevealTimer = null;
+    }
+    if (flowerCueTimer) {
+        clearTimeout(flowerCueTimer);
+        flowerCueTimer = null;
+    }
+    if (goldRevealFxTimer) {
+        clearTimeout(goldRevealFxTimer);
+        goldRevealFxTimer = null;
+    }
+
+    if (disposeGuard && typeof disposeScreenGuard === 'function') {
+        try {
+            disposeScreenGuard();
+        } catch {
+            // 忽略清理阶段异常，避免影响后续退出链路
+        }
+    }
+}
+
 async function bootstrap() {
     if (!hasFirebaseConfig()) {
         const { missingKeys } = getFirebaseConfigStatus();
@@ -1793,86 +2062,93 @@ async function bootstrap() {
     };
     saveSession(session);
 
-    unsubscribeRoom = subscribeRoom(roomCode, async (room) => {
-        const firstSnapshot = roomState === null;
-        roomState = room;
-        if (!roomState) {
-            setStatus('房间不存在或已关闭', true);
-            return;
-        }
-
-        if ((roomState?.meta?.status || 'waiting') === 'waiting') {
-            setStatus('对局尚未开始，正在等待房主开局...', true);
-        }
-
-        render();
-        syncActionAudio(roomState?.game?.state || null, firstSnapshot);
-        syncGoldRevealEffect(roomState?.game?.state || null, firstSnapshot);
-        syncFlowerCue(roomState?.game?.state || null, firstSnapshot);
-        syncChuiFengCue(roomState?.game?.state || null, firstSnapshot);
-
-        try {
-            await tryElectHost(roomCode, session.uid, roomState);
-        } catch {
-            // 竞选异常时仅记录，不打断渲染
-        }
-
-        if (isHost()) {
-            const hasPendingActions = Object.values(roomState?.actions || {})
-                .some((entry) => entry && entry.status === 'pending');
-            if (hasPendingActions) {
-                hostLoopBurstUntil = Math.max(hostLoopBurstUntil, Date.now() + HOST_LOOP_BURST_WINDOW_MS);
+    try {
+        unsubscribeRoom = subscribeRoom(roomCode, async (room) => {
+            const firstSnapshot = roomState === null;
+            roomState = room;
+            if (!roomState) {
+                setStatus('房间不存在或已关闭', true);
+                return;
             }
-            ensureHostLoop();
-        } else {
-            stopHostLoop();
-        }
-    });
 
-    detachPresence = await attachPresence(roomCode, session.uid, session.seatId, session.nickname);
-    setupActionAudioUnlock();
+            if ((roomState?.meta?.status || 'waiting') === 'waiting') {
+                setStatus('对局尚未开始，正在等待房主开局...', true);
+            }
 
-    document.getElementById('hand-bottom')?.addEventListener('click', handleHandClick);
-    document.getElementById('hand-bottom')?.addEventListener('contextmenu', handleHandContextMenu);
-    actionBarEl?.addEventListener('click', handleActionBarClick);
-    document.addEventListener('click', handleBoardOutsideClick);
-    leaveRoomBtn?.addEventListener('click', handleLeaveRoom);
-    mobileLeaveRoomBtn?.addEventListener('click', handleLeaveRoom);
-    centerLeaveRoomBtn?.addEventListener('click', handleLeaveRoom);
-    nextRoundBtn?.addEventListener('click', handleNextRound);
-    mobileNextRoundBtn?.addEventListener('click', handleNextRound);
-    centerNextRoundBtn?.addEventListener('click', handleNextRound);
-    centerOpenGoldBtn?.addEventListener('click', handleOpenGold);
-    document.addEventListener('click', handleRuleModalClick);
-    huOverlayEl?.addEventListener('click', () => {
-        const key = outcomeKey(getGameState()?.outcome || null);
-        dismissedOutcomeKey = key;
-        if (huOverlayEl) huOverlayEl.style.display = 'none';
-    });
+            render();
+            syncActionAudio(roomState?.game?.state || null, firstSnapshot);
+            syncGoldRevealEffect(roomState?.game?.state || null, firstSnapshot);
+            syncFlowerCue(roomState?.game?.state || null, firstSnapshot);
+            syncChuiFengCue(roomState?.game?.state || null, firstSnapshot);
 
-    ensureHostLoop();
-    setStatus('已进入实战房间，等待对局开始。');
+            try {
+                await tryElectHost(roomCode, session.uid, roomState);
+            } catch {
+                // 竞选异常时仅记录，不打断渲染
+            }
+
+            if (isHost()) {
+                const hasPendingActions = Object.values(roomState?.actions || {})
+                    .some((entry) => entry && entry.status === 'pending');
+                if (hasPendingActions) {
+                    hostLoopBurstUntil = Math.max(hostLoopBurstUntil, Date.now() + HOST_LOOP_BURST_WINDOW_MS);
+                }
+                ensureHostLoop();
+            } else {
+                stopHostLoop();
+            }
+        });
+
+        detachPresence = await attachPresence(roomCode, session.uid, session.seatId, session.nickname);
+        setupActionAudioUnlock();
+
+        document.getElementById('hand-bottom')?.addEventListener('click', handleHandClick);
+        document.getElementById('hand-bottom')?.addEventListener('contextmenu', handleHandContextMenu);
+        actionBarEl?.addEventListener('click', handleActionBarClick);
+        document.addEventListener('click', handleBoardOutsideClick);
+        leaveRoomBtn?.addEventListener('click', handleLeaveRoom);
+        mobileLeaveRoomBtn?.addEventListener('click', handleLeaveRoom);
+        centerLeaveRoomBtn?.addEventListener('click', handleLeaveRoom);
+        nextRoundBtn?.addEventListener('click', handleNextRound);
+        mobileNextRoundBtn?.addEventListener('click', handleNextRound);
+        centerNextRoundBtn?.addEventListener('click', handleNextRound);
+        centerOpenGoldBtn?.addEventListener('click', handleOpenGold);
+        document.addEventListener('click', handleRuleModalClick);
+        huOverlayEl?.addEventListener('click', () => {
+            const key = outcomeKey(getGameState()?.outcome || null);
+            dismissedOutcomeKey = key;
+            if (huOverlayEl) huOverlayEl.style.display = 'none';
+        });
+
+        ensureHostLoop();
+        setStatus('已进入实战房间，等待对局开始。');
+    } catch (error) {
+        cleanupBattleRuntime();
+        throw error;
+    }
 
     window.addEventListener('beforeunload', () => {
         if (detachPresence) {
-            detachPresence();
+            const detach = detachPresence;
+            detachPresence = null;
+            try {
+                const maybePromise = detach();
+                if (maybePromise && typeof maybePromise.catch === 'function') {
+                    maybePromise.catch(() => {});
+                }
+            } catch {
+                // beforeunload 中不抛出清理异常
+            }
         }
     });
 }
 
 window.addEventListener('unload', () => {
-    if (unsubscribeRoom) unsubscribeRoom();
-    stopHostLoop();
-    if (typeof disposeScreenGuard === 'function') {
-        disposeScreenGuard();
-    }
-    if (goldRevealFxTimer) {
-        clearTimeout(goldRevealFxTimer);
-        goldRevealFxTimer = null;
-    }
+    cleanupBattleRuntime({ disposeGuard: true });
 });
 
 bootstrap().catch((error) => {
+    cleanupBattleRuntime();
     setStatus(error.message || '实战页面初始化失败', true);
 });
 
