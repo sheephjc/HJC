@@ -133,6 +133,53 @@ let lastGoldRevealEffectKey = '';
 let replacementDrawRevealTimer = null;
 let flowerCueTimer = null;
 let goldRevealFxTimer = null;
+let skippedSelfHuPromptKey = '';
+
+function ensureAudioDiagnosticPanel() {
+    const table = document.getElementById('table');
+    if (!table) return null;
+    let panel = document.getElementById('audio-diagnostic');
+    if (panel) return panel;
+    panel = document.createElement('div');
+    panel.id = 'audio-diagnostic';
+    panel.innerHTML = '<div class="audio-diag-title">音频诊断</div><pre class="audio-diag-body"></pre>';
+    table.appendChild(panel);
+    return panel;
+}
+
+function renderAudioDiagnostic(reason = '') {
+    const panel = ensureAudioDiagnosticPanel();
+    if (!panel) return;
+    const body = panel.querySelector('.audio-diag-body');
+    if (!body) return;
+
+    const ctx = getActionAudioContext(false);
+    const ctxState = ctx?.state || 'none';
+    const ua = navigator.userActivation || null;
+    const uaActive = ua?.isActive ? 'active' : 'idle';
+    const uaEver = ua?.hasBeenActive ? 'yes' : 'no';
+    const speechSupported = 'speechSynthesis' in window;
+    let voicesCount = '-';
+    if (speechSupported) {
+        try {
+            voicesCount = Number(window.speechSynthesis?.getVoices?.().length || 0);
+        } catch {
+            voicesCount = '?';
+        }
+    }
+    const lastActionType = String(getGameState()?.lastAction?.type || '-');
+    const tick = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    const lines = [
+        `ctx: ${ctxState}`,
+        `unlock: ${actionAudioUnlocked ? 'yes' : 'no'}`,
+        `gesture: ${uaActive} / ever:${uaEver}`,
+        `speech: ${speechSupported ? 'on' : 'off'} voices:${voicesCount}`,
+        `lastAction: ${lastActionType}`,
+        `reason: ${reason || '-'}`,
+        `time: ${tick}`
+    ];
+    body.textContent = lines.join('\n');
+}
 
 function setStatus(text, isError = false) {
     if (turnStatusEl) {
@@ -378,6 +425,19 @@ function getGameState() {
     return roomState?.game?.state || null;
 }
 
+function selfHuPromptKey(gameState = getGameState(), seatId = getSelfSeatNo()) {
+    const seatNo = Number(seatId);
+    if (!gameState || !Number.isInteger(seatNo) || seatNo < 0 || seatNo > 3) return '';
+    if (gameState.phase !== 'playing') return '';
+    if (Number(gameState.turnSeat) !== seatNo) return '';
+    const draw = gameState.currentDraw || null;
+    if (!draw || Number(draw.seatId) !== seatNo || !draw.tile) return '';
+    const roundNo = Number.isInteger(Number(gameState.roundNo)) ? Number(gameState.roundNo) : 0;
+    const drawTs = Number.isFinite(Number(draw.ts)) ? Number(draw.ts) : 0;
+    const drawReason = String(draw.reason || 'NORMAL').toUpperCase();
+    return `${roundNo}|${seatNo}|${draw.tile}|${drawReason}|${drawTs}`;
+}
+
 function getSelfSeatNo() {
     if (session?.seatId === null || session?.seatId === undefined) return null;
     return normalizeSeatNo(session.seatId, 0);
@@ -590,7 +650,10 @@ function clearTableOutcomeEffects() {
 
 function outcomeWinnerTableText(outcome = null) {
     const headline = buildOutcomeHeadline(outcome);
-    return headline || (outcome?.isSelfDraw ? '自摸' : '点炮');
+    const text = headline || (outcome?.isSelfDraw ? '自摸' : '点炮');
+    if (outcome?.isSelfDraw) return text;
+    const huText = text.replace(/点炮$/, '点炮胡');
+    return huText || '点炮胡';
 }
 
 function renderTableOutcomeEffects() {
@@ -964,10 +1027,14 @@ function hasUserActivationGesture() {
 
 function tryUnlockActionAudio(fromGesture = false) {
     const ctx = getActionAudioContext(true);
-    if (!ctx) return false;
+    if (!ctx) {
+        renderAudioDiagnostic('unlock:no-ctx');
+        return false;
+    }
 
     if (ctx.state === 'running' || ctx.state === 'interrupted') {
         actionAudioUnlocked = true;
+        renderAudioDiagnostic(fromGesture ? 'unlock:ready-gesture' : 'unlock:ready');
         return true;
     }
 
@@ -975,10 +1042,12 @@ function tryUnlockActionAudio(fromGesture = false) {
         ctx.resume().then(() => {
             if (ctx.state === 'running' || ctx.state === 'interrupted') {
                 actionAudioUnlocked = true;
+                renderAudioDiagnostic('unlock:resumed');
             }
         }).catch(() => {});
     }
 
+    renderAudioDiagnostic(fromGesture ? 'unlock:pending-gesture' : 'unlock:pending');
     return actionAudioUnlocked;
 }
 
@@ -1028,6 +1097,7 @@ function primeActionVoiceEngine(fromGesture = false) {
     if (actionVoicePrimed) return;
     actionVoicePrimed = true;
     getActionVoiceProfile();
+    renderAudioDiagnostic(fromGesture ? 'prime:gesture' : 'prime');
 }
 
 function setupActionAudioUnlock() {
@@ -1060,12 +1130,37 @@ function playActionSfx(type = '') {
     const conf = ACTION_SFX_MAP[type];
     if (!conf) return;
 
-    if (hasUserActivationGesture()) tryUnlockActionAudio(true);
-    if (!actionAudioUnlocked) return;
+    const hasGesture = hasUserActivationGesture();
+    if (hasGesture) tryUnlockActionAudio(true);
+    if (!actionAudioUnlocked && !hasGesture) {
+        renderAudioDiagnostic(`sfx:${type}:blocked`);
+        return;
+    }
 
-    const ctx = getActionAudioContext(false);
-    if (!ctx) return;
-    if (ctx.state !== 'running' && ctx.state !== 'interrupted') return;
+    const ctx = getActionAudioContext(true);
+    if (!ctx) {
+        renderAudioDiagnostic(`sfx:${type}:no-ctx`);
+        return;
+    }
+    if (ctx.state === 'suspended') {
+        if (!hasGesture) {
+            renderAudioDiagnostic(`sfx:${type}:suspended`);
+            return;
+        }
+        ctx.resume().then(() => {
+            if (ctx.state === 'running' || ctx.state === 'interrupted') {
+                actionAudioUnlocked = true;
+                renderAudioDiagnostic(`sfx:${type}:resumed`);
+                playActionSfx(type);
+            }
+        }).catch(() => {});
+        return;
+    }
+    if (ctx.state !== 'running' && ctx.state !== 'interrupted') {
+        renderAudioDiagnostic(`sfx:${type}:state-${ctx.state}`);
+        return;
+    }
+    actionAudioUnlocked = true;
 
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
@@ -1107,6 +1202,7 @@ function playActionSfx(type = '') {
             chimeOsc.stop(startAt + 0.16);
         });
     }
+    renderAudioDiagnostic(`sfx:${type}:played`);
 }
 
 function playActionVoice(type = '') {
@@ -1125,12 +1221,14 @@ function playActionVoice(type = '') {
     speakActionText(text, { voice: profile.voice, lang, cancel: false, rate: 1.08 });
 }
 
-function actionAudioKey(action = null) {
+function actionAudioKey(gameState = null) {
+    const action = gameState?.lastAction || null;
     if (!action || typeof action !== 'object') return '';
     if (!action.type) return '';
     const seatId = Number.isInteger(action.seatId) ? action.seatId : 'x';
     const ts = Number.isFinite(action.ts) ? action.ts : 'x';
-    return `${action.type}|${seatId}|${ts}`;
+    const actionSerial = Array.isArray(gameState?.actionLog) ? gameState.actionLog.length : 'x';
+    return `${action.type}|${seatId}|${ts}|${actionSerial}`;
 }
 
 function actionEffectText(actionType = '') {
@@ -1152,12 +1250,13 @@ function showActionEffect(seatId, actionType = '') {
 
     const effect = document.createElement('div');
     effect.className = 'action-effect';
+    const pos = getPosBySeat(getViewerBaseSeat(), Number(seatId));
+    effect.style.setProperty('--seat-rotate', `${getSeatTextRotationDegByPos(pos)}deg`);
     if (actionType === 'FLOWER_REPLENISH') {
         effect.classList.add('flower');
     }
     effect.textContent = text;
     if (!placeEffectAtSeat(effect, seatId, { verticalRatio: 0.46 })) {
-        const pos = getPosBySeat(getViewerBaseSeat(), Number(seatId));
         const area = document.getElementById(`p-${pos}`);
         if (!area) return;
         area.appendChild(effect);
@@ -1167,7 +1266,7 @@ function showActionEffect(seatId, actionType = '') {
 
 function syncActionAudio(gameState = null, primeOnly = false) {
     const action = gameState?.lastAction || null;
-    const key = actionAudioKey(action);
+    const key = actionAudioKey(gameState);
     if (!key) return;
     if (key === lastActionAudioKey) return;
     if (primeOnly) {
@@ -1187,6 +1286,7 @@ function syncActionAudio(gameState = null, primeOnly = false) {
             showActionEffect(seatId, type);
         }
         playActionVoice(type);
+        renderAudioDiagnostic(`sync:${type}`);
     }
 }
 
@@ -1273,6 +1373,7 @@ function syncChuiFengCue(gameState = null, primeOnly = false) {
     lastChuiFengCueKey = key;
     showChuiFengEffect();
     playActionSfx('CHUI_FENG');
+    renderAudioDiagnostic('sync:CHUI_FENG');
 }
 
 function goldRevealEffectKey(gameState = null) {
@@ -1321,6 +1422,7 @@ function syncGoldRevealEffect(gameState = null, primeOnly = false) {
     lastGoldRevealEffectKey = key;
     showGoldRevealEffect(gameState?.goldTile || '');
     playActionVoice('OPEN_GOLD');
+    renderAudioDiagnostic('sync:OPEN_GOLD');
 }
 
 function buildActionButton(label, attrs = {}) {
@@ -1433,6 +1535,8 @@ function renderActionBar() {
         const selfHuInfo = isSelfDrawState ? getSelfDrawHuInfo(gameState, Number(seatId)) : { canHu: false, types: [] };
         const canHu = !!selfHuInfo?.canHu;
         const mustHu = canHu && Array.isArray(selfHuInfo.types) && selfHuInfo.types.includes('三金倒');
+        const huKey = canHu ? selfHuPromptKey(gameState, Number(seatId)) : '';
+        const huSkipped = !!huKey && huKey === skippedSelfHuPromptKey;
 
         if (!mustHu) {
             const countMap = {};
@@ -1462,8 +1566,11 @@ function renderActionBar() {
             });
         }
 
-        if (canHu) {
+        if (canHu && !huSkipped) {
             controls.push(buildActionButton('胡', { 'data-turn-type': 'HU' }));
+            if (!mustHu) {
+                controls.push(buildActionButton('过', { 'data-turn-pass-hu': '1' }));
+            }
         }
     }
 
@@ -1567,7 +1674,7 @@ function buildOutcomeFormulaText(outcome = null) {
         } else {
             basePay = loser === dealer ? 2 : 1;
         }
-        return `${basePay}底×1点炮家${multiplierSuffix} = ${total}`;
+        return `${basePay}底${multiplierSuffix}×1点炮家 = ${total}`;
     }
 
     if (winnerIsDealer) {
@@ -1576,12 +1683,15 @@ function buildOutcomeFormulaText(outcome = null) {
         const basePart = scoreAsSelfDraw
             ? `(1底×${baseMul}庄家+1自摸)×3闲家`
             : `(1底×${baseMul}庄家)×3闲家`;
-        return `${basePart}${multiplierSuffix} = ${total}`;
+        const payerPart = '×3闲家';
+        const normalizedBasePart = basePart.replace(/×3闲家$/, '');
+        return `${normalizedBasePart}${multiplierSuffix}${payerPart} = ${total}`;
     }
 
     const baseStr = scoreAsSelfDraw ? '1底+1自摸' : '1底';
-    const basePart = `(${baseStr})×2闲家 + (${baseStr}+1庄)×1庄家`;
-    return `${basePart}${multiplierSuffix} = ${total}`;
+    const xianPart = `(${baseStr})${multiplierSuffix}×2闲家`;
+    const zhuangPart = `(${baseStr}+1庄)${multiplierSuffix}×1庄家`;
+    return `${xianPart} + ${zhuangPart} = ${total}`;
 }
 
 function renderOutcome() {
@@ -1668,6 +1778,7 @@ function render() {
     renderActionBar();
     renderInstantScoreLog();
     renderOutcome();
+    renderAudioDiagnostic('render');
 }
 
 function kickHostLoopSoon() {
@@ -1700,6 +1811,9 @@ async function submitIntent(type, payload = {}, options = {}) {
 }
 
 async function handleHandClick(event) {
+    if (event?.isTrusted) {
+        primeActionVoiceEngine(true);
+    }
     const tile = event.target.closest('[data-discard-index]');
     if (!tile) return;
 
@@ -1770,6 +1884,9 @@ function handleHandContextMenu(event) {
 }
 
 async function handleActionBarClick(event) {
+    if (event?.isTrusted) {
+        primeActionVoiceEngine(true);
+    }
     if (getGameState()?.goldRevealed === false) {
         setStatus('等待庄家开金后再操作', true);
         return;
@@ -1813,6 +1930,18 @@ async function handleActionBarClick(event) {
             successText: `已提交 ${type}`
         });
         chiSubMenuOpen = false;
+        return;
+    }
+
+    const turnPassHuBtn = event.target.closest('[data-turn-pass-hu]');
+    if (turnPassHuBtn) {
+        const seatNo = getSelfSeatNo();
+        const key = seatNo === null ? '' : selfHuPromptKey(getGameState(), seatNo);
+        if (!key) return;
+        skippedSelfHuPromptKey = key;
+        chiSubMenuOpen = false;
+        renderActionBar();
+        setStatus('已选择过胡，请出牌');
         return;
     }
 
@@ -2101,6 +2230,7 @@ async function bootstrap() {
 
         detachPresence = await attachPresence(roomCode, session.uid, session.seatId, session.nickname);
         setupActionAudioUnlock();
+        renderAudioDiagnostic('bootstrap');
 
         document.getElementById('hand-bottom')?.addEventListener('click', handleHandClick);
         document.getElementById('hand-bottom')?.addEventListener('contextmenu', handleHandContextMenu);

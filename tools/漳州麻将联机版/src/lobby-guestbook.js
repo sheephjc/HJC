@@ -2,19 +2,22 @@ import { ensureAnonymousAuth, getFirebaseServices, hasFirebaseConfig } from './f
 import {
     addDoc,
     collection,
+    getDocs,
     getFirestore,
     limit,
-    onSnapshot,
     orderBy,
     query,
+    setLogLevel,
     serverTimestamp
 } from '../vendor/firebase/10.14.1/firebase-firestore.js';
 
 const GUESTBOOK_COLLECTION = 'guestbook_lobby';
 const GUESTBOOK_MAX_ROWS = 50;
+const GUESTBOOK_REFRESH_MS = 15000;
 const MAX_NAME_LEN = 24;
 const MAX_TEXT_LEN = 180;
 const FALLBACK_NAME = '游客';
+let firestoreLogConfigured = false;
 
 function cleanText(value, maxLen) {
     return String(value || '').trim().slice(0, maxLen);
@@ -67,14 +70,48 @@ export function initLobbyGuestbook() {
     }
 
     let firestoreCollectionRef = null;
-    let unsubscribe = null;
     let initialized = false;
     let initPromise = null;
     let sending = false;
+    let listQueryRef = null;
+    let pollTimer = null;
+    let lastLoadErrorAt = 0;
 
     const setHint = (text, isError = false) => {
         hintEl.textContent = text;
         hintEl.classList.toggle('error', !!isError);
+    };
+
+    const stopPolling = () => {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    };
+
+    const loadMessages = async (showConnectedHint = false) => {
+        if (!listQueryRef) return;
+        try {
+            const snapshot = await getDocs(listQueryRef);
+            renderSnapshot(snapshot);
+            if (showConnectedHint) {
+                setHint('已连接，留言板可用。');
+            }
+        } catch (error) {
+            const now = Date.now();
+            if (now - lastLoadErrorAt > 20000) {
+                console.warn('[guestbook] load failed:', error);
+                lastLoadErrorAt = now;
+            }
+            setHint('连接不稳定，正在自动重试...', true);
+        }
+    };
+
+    const startPolling = () => {
+        if (pollTimer || !listQueryRef) return;
+        pollTimer = setInterval(() => {
+            loadMessages(false);
+        }, GUESTBOOK_REFRESH_MS);
     };
 
     const renderSnapshot = (snapshot) => {
@@ -102,6 +139,7 @@ export function initLobbyGuestbook() {
     const closeModal = () => {
         modalEl.classList.add('hidden');
         document.body.classList.remove('guestbook-open');
+        stopPolling();
     };
 
     const openModal = () => {
@@ -121,28 +159,21 @@ export function initLobbyGuestbook() {
             }
 
             try {
+                if (!firestoreLogConfigured) {
+                    setLogLevel('error');
+                    firestoreLogConfigured = true;
+                }
                 await ensureAnonymousAuth();
                 const { app } = getFirebaseServices();
                 const firestore = getFirestore(app);
                 firestoreCollectionRef = collection(firestore, GUESTBOOK_COLLECTION);
 
-                const listQuery = query(
+                listQueryRef = query(
                     firestoreCollectionRef,
                     orderBy('createdAt', 'desc'),
                     limit(GUESTBOOK_MAX_ROWS)
                 );
-
-                unsubscribe = onSnapshot(
-                    listQuery,
-                    (snapshot) => {
-                        renderSnapshot(snapshot);
-                        setHint('已连接，留言实时同步中。');
-                    },
-                    (error) => {
-                        console.error('[guestbook] snapshot failed:', error);
-                        setHint('加载留言失败，请稍后重试。', true);
-                    }
-                );
+                await loadMessages(true);
 
                 initialized = true;
                 sendBtn.disabled = false;
@@ -184,6 +215,7 @@ export function initLobbyGuestbook() {
             });
             msgInput.value = '';
             setHint('发送成功。');
+            await loadMessages(false);
         } catch (error) {
             console.error('[guestbook] send failed:', error);
             setHint(`发送失败：${error?.message || '未知错误'}`, true);
@@ -213,7 +245,9 @@ export function initLobbyGuestbook() {
 
     const onOpenClick = () => {
         openModal();
-        ensureInitialized();
+        ensureInitialized().then((ready) => {
+            if (ready) startPolling();
+        });
     };
 
     openBtn.addEventListener('click', onOpenClick);
@@ -233,9 +267,6 @@ export function initLobbyGuestbook() {
         document.removeEventListener('keydown', onDocumentKeyDown);
         msgInput.removeEventListener('keydown', onMessageInputKeyDown);
         sendBtn.removeEventListener('click', handleSend);
-        if (typeof unsubscribe === 'function') {
-            unsubscribe();
-            unsubscribe = null;
-        }
+        stopPolling();
     };
 }
