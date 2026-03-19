@@ -814,6 +814,130 @@ input, select {
     animation: outcome-pop 0.58s ease;
 }
 
+.guestbook-fab {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1200;
+    min-width: 92px;
+    height: 42px;
+    border: 1px solid #0f766e;
+    border-radius: 999px;
+    background: #0f766e;
+    color: #ffffff;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    box-shadow: 0 10px 24px rgba(2, 6, 23, 0.35);
+    cursor: pointer;
+}
+
+.guestbook-fab:hover {
+    filter: brightness(0.95);
+}
+
+.guestbook-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1250;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    background: rgba(2, 6, 23, 0.45);
+}
+
+.guestbook-panel {
+    width: min(620px, 96vw);
+    max-height: min(88vh, calc(var(--app-height, 100vh) - 20px));
+    display: grid;
+    gap: 10px;
+    overflow: hidden;
+}
+
+.guestbook-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.guestbook-close-btn {
+    min-width: 64px;
+}
+
+.guestbook-hint {
+    margin: 0;
+    font-size: 12px;
+}
+
+.guestbook-hint.error {
+    color: #b91c1c;
+    font-weight: 700;
+}
+
+.guestbook-list {
+    min-height: 170px;
+    max-height: min(44vh, 360px);
+    overflow: auto;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    background: #f8fafc;
+    padding: 10px;
+    display: grid;
+    gap: 8px;
+}
+
+.guestbook-empty {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.guestbook-item {
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    background: #ffffff;
+    padding: 8px 10px;
+    display: grid;
+    gap: 4px;
+}
+
+.guestbook-item-title {
+    font-size: 13px;
+    color: #0f172a;
+    font-weight: 700;
+}
+
+.guestbook-item-text {
+    font-size: 14px;
+    color: #1e293b;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.guestbook-item-time {
+    font-size: 11px;
+    color: #64748b;
+}
+
+.guestbook-form {
+    display: grid;
+    gap: 8px;
+}
+
+#guestbook-message-input {
+    width: 100%;
+    min-height: 88px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    line-height: 1.45;
+    resize: vertical;
+}
+
 @keyframes outcome-pop {
     0% {
         transform: scale(0.96);
@@ -927,5 +1051,24 @@ input, select {
         top: 10px;
         font-size: 13px;
         padding: 8px 12px;
+    }
+
+    .guestbook-fab {
+        right: 10px;
+        bottom: 10px;
+        min-width: 84px;
+        height: 38px;
+        font-size: 13px;
+    }
+
+    .guestbook-panel {
+        width: min(680px, 98vw);
+        max-height: min(90vh, calc(var(--app-height, 100vh) - 8px));
+        padding: 12px;
+        gap: 8px;
+    }
+
+    .guestbook-list {
+        max-height: min(46vh, 360px);
     }
 }

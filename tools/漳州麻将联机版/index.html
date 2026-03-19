@@ -55,6 +55,38 @@
         </section>
     </main>
 
+    <button id="guestbook-open-btn" class="guestbook-fab" type="button" aria-haspopup="dialog" aria-controls="guestbook-modal">
+        留言板
+    </button>
+
+    <div id="guestbook-modal" class="guestbook-modal hidden" role="dialog" aria-modal="true" aria-labelledby="guestbook-title">
+        <div class="guestbook-panel card" role="document">
+            <div class="guestbook-head">
+                <h2 id="guestbook-title">大厅留言板</h2>
+                <button id="guestbook-close-btn" class="btn guestbook-close-btn" type="button" aria-label="关闭留言板">关闭</button>
+            </div>
+            <p id="guestbook-hint" class="muted guestbook-hint">正在连接...</p>
+
+            <div id="guestbook-list" class="guestbook-list" aria-live="polite">
+                <p class="guestbook-empty">正在加载留言...</p>
+            </div>
+
+            <div class="guestbook-form">
+                <label class="field">
+                    <span>昵称</span>
+                    <input id="guestbook-name-input" type="text" maxlength="24" placeholder="默认读取大厅昵称">
+                </label>
+                <label class="field">
+                    <span>留言</span>
+                    <textarea id="guestbook-message-input" maxlength="180" placeholder="最多 180 字，按 Ctrl+Enter 发送。"></textarea>
+                </label>
+                <div class="row">
+                    <button id="guestbook-send-btn" class="btn btn-primary" type="button">发送</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="./src/lobby.js?v=20260318r34"></script>
 </body>
 </html>

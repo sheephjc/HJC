@@ -12,6 +12,7 @@ import { ensureAnonymousAuth, getFirebaseConfigStatus, hasFirebaseConfig } from 
 import { clearSession, loadSession, saveSession } from './session.js';
 import { initMobileScreenGuard } from './mobile-screen-guard.js';
 import { showActionToast } from './ui-toast.js';
+import { initLobbyGuestbook } from './lobby-guestbook.js';
 
 // 文案门禁关键短语（勿删）：
 // 等待房间状态同步
@@ -41,6 +42,7 @@ let redirecting = false;
 let seatSwitchBusy = false;
 let pendingSeatSwitch = null;
 let debugEntryUnlocked = false;
+let disposeGuestbook = null;
 const disposeScreenGuard = initMobileScreenGuard({
     expectedOrientation: 'portrait',
     rootSelector: 'main.page',
@@ -659,6 +661,7 @@ async function bootstrap() {
     }
 
     bindEvents();
+    disposeGuestbook = initLobbyGuestbook();
 
     const restored = await tryRestoreWaitingSession();
     if (!restored) {
@@ -673,6 +676,10 @@ async function bootstrap() {
 
     window.addEventListener('unload', () => {
         disposeRoomSubscription();
+        if (typeof disposeGuestbook === 'function') {
+            disposeGuestbook();
+            disposeGuestbook = null;
+        }
         if (typeof disposeScreenGuard === 'function') {
             disposeScreenGuard();
         }
