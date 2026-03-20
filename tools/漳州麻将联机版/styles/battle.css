@@ -129,10 +129,14 @@
         #p-right { right: calc((var(--desktop-side-lane-width) * -0.2) + var(--desktop-side-edge-gap)); top: 50%; transform: translateY(-50%) rotate(-90deg); }
         #p-left, #p-right { width: var(--desktop-side-lane-width); align-items: center; }
         #p-left .seat-combo,
-        #p-right .seat-combo { width: 100%; }
+        #p-right .seat-combo {
+            width: fit-content;
+            max-width: var(--desktop-side-lane-width);
+        }
         #hand-left, #hand-right,
         #show-left, #show-right {
-            width: 100%;
+            width: fit-content;
+            max-width: var(--desktop-side-lane-width);
             text-align: center;
             justify-content: center;
             box-sizing: border-box;
@@ -182,7 +186,7 @@
         #river-left { left: 22%; top: 50%; transform: translateY(-50%) rotate(90deg); }
         #river-right { right: 22%; top: 50%; transform: translateY(-50%) rotate(-90deg); }
 
-        .river-tile { width: var(--river-w); height: var(--river-h); background: #eee; border: 1px solid #aaa; border-radius: 1px; display: flex; justify-content: center; align-items: center; font-size: calc(var(--river-w) * 0.95); color: #000; box-sizing: border-box; line-height: 1; text-align: center; font-family: "Noto Sans Symbols 2", "Segoe UI Symbol", "Apple Symbols", "Apple Color Emoji", "Microsoft YaHei", sans-serif; }
+        .river-tile { width: var(--river-w); height: var(--river-h); background: #eee; border: 1px solid #aaa; border-radius: 4px; display: flex; justify-content: center; align-items: center; font-size: calc(var(--river-w) * 0.95); color: #000; box-sizing: border-box; line-height: 1; text-align: center; font-family: "Noto Sans Symbols 2", "Segoe UI Symbol", "Apple Symbols", "Apple Color Emoji", "Microsoft YaHei", sans-serif; }
         .river-tile.last-discard { border: 2px solid #f59e0b; box-shadow: 0 0 10px rgba(245, 158, 11, 0.55); background: #fff7e6; }
         .river-tile.winning { border: 2px solid red; } 
         
@@ -410,11 +414,16 @@
 .dealer-badge {
     background: var(--gold-color);
     color: #000;
-    padding: 0 4px;
-    border-radius: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 6px;
+    line-height: 1;
+    border-radius: 999px;
     margin-right: 5px;
     font-weight: bold;
     font-size: 10px;
+    white-space: nowrap;
 }
 
 /* 庄家区域高亮 */
@@ -435,26 +444,35 @@
         .btn-act:active { transform: scale(0.9); }
         .chi-option-btn {
             width: auto;
-            min-width: calc(var(--chi-option-tile-w) * 3 + 18px);
-            height: calc(var(--chi-option-tile-h) + 10px);
+            min-width: calc(var(--chi-option-tile-w) * 3 + 30px);
+            height: calc(var(--chi-option-tile-h) + 14px);
             border-radius: 12px;
             padding: 4px 8px;
+            box-sizing: border-box;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
         }
-        .chi-option-tiles { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 4px; }
-        .chi-option-tile {
+        .chi-option-tiles {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: auto;
+            gap: 4px;
+            font-size: 0;
+            line-height: 0;
+        }
+        .chi-option-tiles .tile {
             box-sizing: border-box;
             width: var(--chi-option-tile-w);
             height: var(--chi-option-tile-h);
-            border-radius: 3px; border: 1px solid #999; background: #fff; color: #000;
-            font-size: calc(var(--chi-option-tile-w) * var(--chi-option-font-scale)); line-height: 1; display: inline-flex; align-items: center; justify-content: center;
-            text-align: center;
-            font-family: "Noto Sans Symbols 2", "Segoe UI Symbol", "Apple Symbols", "Apple Color Emoji", "Microsoft YaHei", sans-serif;
-            box-shadow: 1px 1px 0 #bbb;
-        }
-        .chi-option-tile.is-gold {
-            border-color: #999;
-            background: #fffdf0;
-            box-shadow: inset 0 0 0 2px var(--gold-color), 1px 1px 0 #bbb;
+            font-size: calc(var(--chi-option-tile-w) * var(--chi-option-font-scale));
+            margin: 0;
+            flex: 0 0 auto;
+            align-self: center;
+            pointer-events: none;
+            cursor: default;
+            font-weight: 400;
         }
 
         /* 吃碰杠特效文字 */
@@ -760,7 +778,7 @@
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.85);
-    z-index: 2000;
+    z-index: 30000;
     justify-content: center;
     align-items: center;
     padding: 20px;
@@ -983,6 +1001,16 @@ color:#e5e7eb;
         width: 86vw;
     }
 
+    #p-top .score-board,
+    #p-bottom .score-board {
+        margin-bottom: 0;
+    }
+
+    #show-top,
+    #show-bottom {
+        margin-bottom: 1px;
+    }
+
     .left-top-panel {
         top: calc(env(safe-area-inset-top, 0px) + 20px);
         left: 0;
@@ -1075,6 +1103,12 @@ color:#e5e7eb;
         align-items: center;
     }
 
+    #p-left .seat-combo,
+    #p-right .seat-combo {
+        width: 100%;
+        max-width: 100%;
+    }
+
     #hand-left, #hand-right,
     #show-left, #show-right {
         width: 100%;
@@ -1095,12 +1129,12 @@ color:#e5e7eb;
     #action-bar { bottom: 22vh; gap: 10px; }
     .btn-act { width: 58px; height: 58px; font-size: 18px; }
     .chi-option-btn {
-        min-width: calc(var(--chi-option-tile-w) * 3 + 14px);
-        height: calc(var(--chi-option-tile-h) + 8px);
+        min-width: calc(var(--chi-option-tile-w) * 3 + 26px);
+        height: calc(var(--chi-option-tile-h) + 12px);
         padding: 3px 6px;
         border-radius: 10px;
     }
-    .chi-option-tile {
+    .chi-option-tiles .tile {
         width: var(--chi-option-tile-w);
         height: var(--chi-option-tile-h);
         font-size: calc(var(--chi-option-tile-w) * var(--chi-option-font-scale));
@@ -1118,7 +1152,7 @@ color:#e5e7eb;
     #action-bar.chi-three-mobile .btn-act {
         width: 100%;
         min-width: 0;
-        height: calc(var(--chi-option-tile-h) + 8px);
+        height: calc(var(--chi-option-tile-h) + 12px);
         border-radius: 10px;
     }
 
@@ -1136,6 +1170,10 @@ color:#e5e7eb;
         width: min(96vw, 720px);
         padding: 4px 8px;
         box-sizing: border-box;
+    }
+
+    #trustee-btn {
+        display: none !important;
     }
 
     .mobile-turn-status {
@@ -1171,6 +1209,33 @@ color:#e5e7eb;
         font-size: 10px;
         padding: 4px 9px;
         margin: 0;
+    }
+
+    #mobile-leave-room-btn,
+    #mobile-trustee-btn {
+        position: fixed;
+        top: calc(env(safe-area-inset-top, 0px) + 10px);
+        z-index: 1450;
+        pointer-events: auto;
+        margin: 0;
+        white-space: nowrap;
+    }
+
+    #mobile-leave-room-btn {
+        right: max(2px, calc(env(safe-area-inset-right, 0px) + 2px));
+        font-size: 11px;
+        padding: 5px 10px;
+    }
+
+    #mobile-trustee-btn {
+        right: calc(max(2px, calc(env(safe-area-inset-right, 0px) + 2px)) + 74px);
+        min-width: 116px;
+        height: 36px;
+        padding: 0 12px;
+        font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
 
     .online-room-bar {
@@ -1258,7 +1323,10 @@ color:#e5e7eb;
         width: 48px;
         height: 64px;
     }
-    #gold-display .gold-display-glyph { font-size: 45px; }
+    #gold-display .gold-display-glyph {
+        font-size: 45px;
+        transform: translateY(-0.04em);
+    }
     #gold-display .gold-display-placeholder { font-size: 31px; }
     #center-open-gold-wrap { top: calc(50% + 88px); }
 
@@ -1337,8 +1405,53 @@ color:#e5e7eb;
     border-color: #ef4444;
 }
 
+#trustee-btn,
+#mobile-trustee-btn {
+    position: fixed;
+    z-index: 1450;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    min-width: 116px;
+    height: 36px;
+    padding: 0 12px;
+    margin: 0;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 999px;
+    border: 1px solid rgba(56, 189, 248, 0.72);
+    background: rgba(3, 25, 38, 0.86);
+    color: #e0f2fe;
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.36);
+    white-space: nowrap;
+}
+
+#trustee-btn {
+    right: max(12px, calc(env(safe-area-inset-right, 0px) + 10px));
+    bottom: max(14px, calc(env(safe-area-inset-bottom, 0px) + 10px));
+}
+
+#trustee-btn.active,
+#mobile-trustee-btn.active {
+    background: rgba(6, 95, 70, 0.92);
+    border-color: rgba(52, 211, 153, 0.9);
+    color: #ecfdf5;
+}
+
 #hand-bottom .tile.disabled {
     opacity: 0.58;
+}
+
+#p-bottom.ai-takeover .seat-combo {
+    border-color: rgba(56, 189, 248, 0.78);
+    border-radius: 14px;
+    background: rgba(8, 47, 73, 0.26);
+    box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.5), 0 0 16px rgba(14, 165, 233, 0.38);
+    animation: aiTakeoverPulse 1.4s ease-in-out infinite;
+}
+
+#p-bottom.ai-takeover #hand-bottom .tile {
+    filter: saturate(0.9) brightness(0.95);
 }
 
 #action-bar {
@@ -1409,6 +1522,15 @@ color:#e5e7eb;
     font-size: 11px;
     color: #e2e8f0;
     line-height: 1.35;
+}
+
+@keyframes aiTakeoverPulse {
+    0%, 100% {
+        box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.45), 0 0 14px rgba(14, 165, 233, 0.3);
+    }
+    50% {
+        box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.75), 0 0 22px rgba(56, 189, 248, 0.52);
+    }
 }
 
 @media (min-width: 768px) {
@@ -1485,6 +1607,10 @@ color:#e5e7eb;
         pointer-events: none;
     }
 
+    #trustee-btn {
+        display: none !important;
+    }
+
     .mobile-turn-status {
         display: none !important;
     }
@@ -1493,15 +1619,30 @@ color:#e5e7eb;
         display: none !important;
     }
 
-    #mobile-leave-room-btn {
+    #mobile-leave-room-btn,
+    #mobile-trustee-btn {
         position: fixed;
-        top: calc(env(safe-area-inset-top, 0px) + 2px);
+        top: calc(env(safe-area-inset-top, 0px) + 10px);
         right: max(2px, calc(env(safe-area-inset-right, 0px) + 2px));
         z-index: 1450;
         pointer-events: auto;
         margin: 0;
+    }
+
+    #mobile-leave-room-btn {
         font-size: 11px;
         padding: 5px 10px;
+    }
+
+    #mobile-trustee-btn {
+        right: calc(max(2px, calc(env(safe-area-inset-right, 0px) + 2px)) + 74px);
+        min-width: 116px;
+        height: 36px;
+        padding: 0 12px;
+        font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
 
     #center-info {
@@ -1713,7 +1854,7 @@ color:#e5e7eb;
     #show-bottom {
         position: relative;
         z-index: 5;
-        margin-bottom: 8px;
+        margin-bottom: 1px;
     }
 
     #p-top {
@@ -1722,7 +1863,12 @@ color:#e5e7eb;
     }
 
     #show-top {
-        margin-bottom: 10px;
+        margin-bottom: 1px;
+    }
+
+    #p-top .score-board,
+    #p-bottom .score-board {
+        margin-bottom: 0;
     }
 
     #p-left {
@@ -1735,6 +1881,12 @@ color:#e5e7eb;
         right: calc(-1 * var(--mobile-side-offset));
         top: 45%;
         width: var(--mobile-side-lane-width);
+    }
+
+    #p-left .seat-combo,
+    #p-right .seat-combo {
+        width: 100%;
+        max-width: 100%;
     }
 
     #p-top .hand .tile,
@@ -1976,8 +2128,9 @@ color:#e5e7eb;
         white-space: nowrap;
         justify-content: center;
         min-width: 0;
-        max-width: var(--desktop-side-lane-width);
-        overflow: hidden;
+        width: auto;
+        max-width: none;
+        overflow: visible;
     }
 
     #show-top,
@@ -1988,8 +2141,15 @@ color:#e5e7eb;
         white-space: nowrap;
         justify-content: center;
         align-content: center;
-        max-width: var(--desktop-side-lane-width);
-        overflow: hidden;
+        width: auto;
+        max-width: none;
+        overflow: visible;
+    }
+
+    #p-left .seat-combo,
+    #p-right .seat-combo {
+        width: fit-content;
+        max-width: none;
     }
 
     .revealed-zone {
@@ -2036,8 +2196,10 @@ color:#e5e7eb;
     }
 
     #center-info {
-        width: 148px;
-        height: 148px;
+        width: 172px;
+        min-height: 188px;
+        height: auto;
+        padding: 10px 12px;
         border-width: 3px;
         border-radius: 12px;
     }
@@ -2055,6 +2217,7 @@ color:#e5e7eb;
 
     #gold-display .gold-display-glyph {
         font-size: 60px;
+        transform: translateY(-0.04em);
     }
 
     #gold-display .gold-display-placeholder {
@@ -2093,6 +2256,13 @@ color:#e5e7eb;
         font-size: 17px;
     }
 
+    #trustee-btn {
+        min-width: 132px;
+        height: 40px;
+        font-size: 14px;
+        padding: 0 14px;
+    }
+
     #action-bar {
         gap: 18px;
     }
@@ -2104,8 +2274,8 @@ color:#e5e7eb;
     }
 
     .chi-option-btn {
-        min-width: calc(var(--chi-option-tile-w) * 3 + 24px);
-        height: calc(var(--chi-option-tile-h) + 14px);
+        min-width: calc(var(--chi-option-tile-w) * 3 + 34px);
+        height: calc(var(--chi-option-tile-h) + 16px);
         padding: 5px 10px;
     }
 }

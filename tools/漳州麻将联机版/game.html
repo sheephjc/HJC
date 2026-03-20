@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>漳州麻将联机对局</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🀆</text></svg>">
-    <link rel="stylesheet" href="./styles/battle.css?v=20260318r34">
+    <link rel="stylesheet" href="./styles/battle.css?v=20260320r41">
 </head>
 <body>
     <div id="table">
@@ -24,7 +24,8 @@
         <div id="mobile-game-bar">
             <div id="mobile-turn-status" class="mobile-turn-status">等待房间状态同步...</div>
             <button id="mobile-next-round-btn" class="btn-ui" type="button" style="display:none;">下一局</button>
-            <button id="mobile-leave-room-btn" class="btn-ui" type="button">离开</button>
+            <button id="mobile-trustee-btn" class="btn-ui" type="button" style="display:none;">托管（弱AI）</button>
+            <button id="mobile-leave-room-btn" class="btn-ui danger" type="button">离开</button>
         </div>
 
         <div class="left-top-panel">
@@ -95,6 +96,7 @@
         </div>
 
         <div id="action-bar" class="hidden"></div>
+        <button id="trustee-btn" class="btn-ui" type="button" style="display:none;">托管（弱AI）</button>
         <div id="gold-reveal-fx" aria-hidden="true"></div>
     </div>
 
@@ -202,6 +204,6 @@
         </div>
     </div>
 
-    <script type="module" src="./src/game-battle.js?v=20260318r34"></script>
+    <script type="module" src="./src/game-battle.js?v=20260320r41"></script>
 </body>
 </html>

@@ -42,6 +42,7 @@ export function buildHumanSeat(seatId, uid, nickname, online = true, now = Date.
         isBot: false,
         online,
         control: online ? 'human' : 'bot',
+        trustee: false,
         lastSeen: now
     };
 }
@@ -80,6 +81,7 @@ export function normalizeSeatsForStart(seats = {}, now = Date.now()) {
             nextSeats[seatId] = {
                 ...seat,
                 control: 'bot',
+                trustee: false,
                 lastSeen: now
             };
         }
@@ -96,13 +98,16 @@ export function syncHumanSeatControls(seats = {}, presence = {}, now = Date.now(
         if (!seat || seat.isBot) continue;
 
         const isOnline = !!presence?.[seat.uid]?.online;
-        const expectedControl = isOnline ? 'human' : 'bot';
+        const keepTrustee = isOnline && seat.trustee === true;
+        const expectedControl = keepTrustee ? 'bot' : (isOnline ? 'human' : 'bot');
+        const expectedTrustee = keepTrustee;
 
-        if (seat.online !== isOnline || seat.control !== expectedControl) {
+        if (seat.online !== isOnline || seat.control !== expectedControl || seat.trustee !== expectedTrustee) {
             nextSeats[seatId] = {
                 ...seat,
                 online: isOnline,
                 control: expectedControl,
+                trustee: expectedTrustee,
                 lastSeen: now
             };
             changed = true;

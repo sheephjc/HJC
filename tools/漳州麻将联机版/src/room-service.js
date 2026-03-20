@@ -544,6 +544,7 @@ export async function switchSeat(roomCodeInput, uid, nicknameInput, targetSeatId
             appendPatchEntry(patch, `memberUids/${sessionUid}`, true);
             appendPatchEntry(patch, `seats/${targetSeatId}/online`, true);
             appendPatchEntry(patch, `seats/${targetSeatId}/control`, 'human');
+            appendPatchEntry(patch, `seats/${targetSeatId}/trustee`, false);
             appendPatchEntry(patch, `seats/${targetSeatId}/nickname`, nickname);
             appendPatchEntry(patch, `seats/${targetSeatId}/lastSeen`, now);
             await update(roomRef, patch);
@@ -609,6 +610,7 @@ export async function switchSeat(roomCodeInput, uid, nicknameInput, targetSeatId
         appendPatchEntry(patch, `memberUids/${sessionUid}`, true);
         appendPatchEntry(patch, `seats/${targetSeatId}/online`, true);
         appendPatchEntry(patch, `seats/${targetSeatId}/control`, 'human');
+        appendPatchEntry(patch, `seats/${targetSeatId}/trustee`, false);
         appendPatchEntry(patch, `seats/${targetSeatId}/nickname`, nickname);
         appendPatchEntry(patch, `seats/${targetSeatId}/lastSeen`, now);
         for (const seatId of releaseSeatIds) {
@@ -672,6 +674,7 @@ export async function attachPresence(roomCodeInput, uid, seatId = null, nickname
             await update(buildRoomRef(bindings, roomCode, 'seats', normalizedSeatId).ref, {
                 online: true,
                 control: 'human',
+                trustee: false,
                 lastSeen: nowTs()
             });
         }
@@ -1067,6 +1070,7 @@ export async function leaveRoom(roomCodeInput, uid, seatId = null) {
         const seatIdStr = String(normalizedSeatId);
         updates.push([`seats/${seatIdStr}/online`, false]);
         updates.push([`seats/${seatIdStr}/control`, 'bot']);
+        updates.push([`seats/${seatIdStr}/trustee`, false]);
         updates.push([`seats/${seatIdStr}/lastSeen`, nowTs()]);
     }
 
@@ -1080,6 +1084,83 @@ export async function leaveRoom(roomCodeInput, uid, seatId = null) {
             buildFirebaseContext(bindings, roomNode.path, roomCode)
         );
     }
+}
+
+export async function setSeatControlMode(roomCodeInput, uid, seatIdInput, controlInput = 'human') {
+    const roomCode = normalizeRoomCode(roomCodeInput);
+    const sessionUid = normalizeUid(uid, 'uid');
+    const seatId = normalizeOptionalSeatId(seatIdInput);
+    if (seatId === null) {
+        throw new Error('座位无效。');
+    }
+
+    const control = String(controlInput || '').trim().toLowerCase();
+    if (control !== 'human' && control !== 'bot') {
+        throw new Error('控制模式无效。');
+    }
+
+    const user = await ensureAnonymousAuth();
+    if (String(user?.uid || '') !== sessionUid) {
+        throw new Error('当前登录身份与会话不一致，请重新加入房间。');
+    }
+
+    const bindings = getDatabaseBindings();
+    const { get, update } = bindings;
+    const roomNode = buildRoomRef(bindings, roomCode);
+    const roomRef = roomNode.ref;
+
+    let room = null;
+    try {
+        const snap = await get(roomRef);
+        room = snap.exists() ? snap.val() : null;
+    } catch (error) {
+        throw normalizeFirebaseDbError(
+            error,
+            '切换托管失败',
+            'setSeatControlMode.readRoom',
+            buildFirebaseContext(bindings, roomNode.path, roomCode)
+        );
+    }
+
+    if (!room) throw new Error('房间不存在。');
+    if (room?.memberUids?.[sessionUid] !== true) {
+        throw new Error('你不在该房间成员列表中。');
+    }
+
+    const seat = room?.seats?.[seatId];
+    if (!seat || seat.isBot) {
+        throw new Error('当前座位不可托管。');
+    }
+    if (String(seat.reservedUid || '') !== sessionUid && String(seat.uid || '') !== sessionUid) {
+        throw new Error('只能切换你自己的座位。');
+    }
+
+    const now = nowTs();
+    const patch = {};
+    appendPatchEntry(patch, `seats/${seatId}/online`, true);
+    appendPatchEntry(patch, `seats/${seatId}/control`, control);
+    appendPatchEntry(patch, `seats/${seatId}/trustee`, control === 'bot');
+    appendPatchEntry(patch, `seats/${seatId}/lastSeen`, now);
+    appendPatchEntry(patch, `presence/${sessionUid}/online`, true);
+    appendPatchEntry(patch, `presence/${sessionUid}/seatId`, String(seatId));
+    appendPatchEntry(patch, `presence/${sessionUid}/lastSeen`, now);
+    appendPatchEntry(patch, 'meta/updatedAt', now);
+
+    try {
+        await update(roomRef, patch);
+    } catch (error) {
+        throw normalizeFirebaseDbError(
+            error,
+            '切换托管失败',
+            'setSeatControlMode.writeRoom',
+            buildFirebaseContext(bindings, roomNode.path, roomCode)
+        );
+    }
+
+    return {
+        seatId: Number(seatId),
+        control
+    };
 }
 
 export async function getRoomSnapshot(roomCodeInput) {

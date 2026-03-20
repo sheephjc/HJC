@@ -1,4 +1,4 @@
-import { createAction } from './shared/action-schema.js';
+﻿import { createAction } from './shared/action-schema.js';
 import { getSelfDrawHuInfo, hasMandatorySanJinHu } from './online-game-engine.js';
 import { ensureAnonymousAuth, getFirebaseConfigStatus, hasFirebaseConfig } from './firebase-client.js';
 import { toTileEmoji } from './tile-display.js';
@@ -7,6 +7,7 @@ import {
     attachPresence,
     leaveRoom,
     runHostTick,
+    setSeatControlMode,
     submitActionIntent,
     subscribeRoom,
     tryElectHost
@@ -20,7 +21,7 @@ import { showActionToast } from './ui-toast.js';
 // 已提牌，再次点击同一张牌打出
 // 复制失败，请检查浏览器剪贴板权限
 
-const BUILD_TAG = '20260318r34';
+const BUILD_TAG = '20260320r41';
 const HOST_LOOP_IDLE_INTERVAL_MS = 650;
 const HOST_LOOP_ACTIVE_INTERVAL_MS = 100;
 const HOST_LOOP_BURST_WINDOW_MS = 2800;
@@ -28,6 +29,7 @@ const GOLD_REVEAL_FX_DURATION_MS = 1880;
 const REPLACEMENT_DRAW_DELAY_MS = 100;
 const REPLACEMENT_DRAW_REASONS = new Set(['GANG', 'GANG_FLOWER', 'FLOWER']);
 const FLOWER_DRAW_REASONS = new Set(['FLOWER', 'GANG_FLOWER']);
+const WHITE_DRAGON_TILE_CODE = 'Z7';
 const CLAIM_PRIORITY = Object.freeze({
     HU: 0,
     PENG: 1,
@@ -77,7 +79,13 @@ const ACTION_VOICE_MAP = Object.freeze({
     AN_GANG: { minnan: '暗摃', mandarin: '暗杠' },
     BU_GANG: { minnan: '補摃', mandarin: '补杠' },
     HU: { minnan: '糊', mandarin: '胡' },
-    FLOWER_REPLENISH: { minnan: '補花', mandarin: '补花' }
+    FLOWER_REPLENISH: { minnan: '補花', mandarin: '补花' },
+    CHUI_FENG: { minnan: '吹風', mandarin: '吹风' }
+});
+const ACTION_VOICE_MODE = Object.freeze({
+    AUTO: 'auto',
+    FORCE_MINNAN: 'force_minnan',
+    FORCE_MANDARIN: 'force_mandarin'
 });
 const AUDIO_UNLOCK_EVENTS = ['click', 'touchend', 'keydown'];
 
@@ -86,6 +94,8 @@ const turnStatusEl = document.getElementById('turn-status');
 const mobileTurnStatusEl = document.getElementById('mobile-turn-status');
 const leaveRoomBtn = document.getElementById('leave-room-btn');
 const mobileLeaveRoomBtn = document.getElementById('mobile-leave-room-btn');
+const trusteeBtn = document.getElementById('trustee-btn');
+const mobileTrusteeBtn = document.getElementById('mobile-trustee-btn');
 const nextRoundBtn = document.getElementById('next-round-btn');
 const mobileNextRoundBtn = document.getElementById('mobile-next-round-btn');
 const centerNextRoundBtn = document.getElementById('center-next-round-btn');
@@ -125,6 +135,11 @@ let actionAudioCtx = null;
 let actionAudioUnlocked = false;
 let actionVoiceProfile = null;
 let actionVoicePrimed = false;
+let actionSpeechSeq = 0;
+let actionVoiceMode = ACTION_VOICE_MODE.FORCE_MINNAN;
+let actionVoiceConsoleRegistered = false;
+let audioDiagnosticVisible = false;
+let lastAudioDiagnosticReason = '-';
 let lastActionAudioKey = '';
 let lastFlowerCueKey = '';
 let lastChuiFengCueKey = '';
@@ -139,17 +154,23 @@ function ensureAudioDiagnosticPanel() {
     const table = document.getElementById('table');
     if (!table) return null;
     let panel = document.getElementById('audio-diagnostic');
-    if (panel) return panel;
+    if (panel) {
+        panel.style.display = audioDiagnosticVisible ? 'block' : 'none';
+        return panel;
+    }
     panel = document.createElement('div');
     panel.id = 'audio-diagnostic';
     panel.innerHTML = '<div class="audio-diag-title">音频诊断</div><pre class="audio-diag-body"></pre>';
+    panel.style.display = audioDiagnosticVisible ? 'block' : 'none';
     table.appendChild(panel);
     return panel;
 }
 
 function renderAudioDiagnostic(reason = '') {
+    if (reason) lastAudioDiagnosticReason = String(reason);
     const panel = ensureAudioDiagnosticPanel();
     if (!panel) return;
+    if (!audioDiagnosticVisible) return;
     const body = panel.querySelector('.audio-diag-body');
     if (!body) return;
 
@@ -159,6 +180,11 @@ function renderAudioDiagnostic(reason = '') {
     const uaActive = ua?.isActive ? 'active' : 'idle';
     const uaEver = ua?.hasBeenActive ? 'yes' : 'no';
     const speechSupported = 'speechSynthesis' in window;
+    const profile = speechSupported ? getActionVoiceProfile() : { voice: null, mandarinVoice: null };
+    const selectedVoice = actionVoiceMode === ACTION_VOICE_MODE.FORCE_MANDARIN
+        ? (profile?.mandarinVoice || profile?.voice || null)
+        : (profile?.voice || null);
+    const voiceName = selectedVoice?.name ? String(selectedVoice.name) : '-';
     let voicesCount = '-';
     if (speechSupported) {
         try {
@@ -174,11 +200,95 @@ function renderAudioDiagnostic(reason = '') {
         `unlock: ${actionAudioUnlocked ? 'yes' : 'no'}`,
         `gesture: ${uaActive} / ever:${uaEver}`,
         `speech: ${speechSupported ? 'on' : 'off'} voices:${voicesCount}`,
+        `voice: ${voiceName}`,
+        `mode: ${actionVoiceMode}`,
         `lastAction: ${lastActionType}`,
         `reason: ${reason || '-'}`,
         `time: ${tick}`
     ];
     body.textContent = lines.join('\n');
+}
+
+function setAudioDiagnosticVisible(visible, reason = '') {
+    audioDiagnosticVisible = !!visible;
+    const panel = ensureAudioDiagnosticPanel();
+    if (panel) {
+        panel.style.display = audioDiagnosticVisible ? 'block' : 'none';
+    }
+    if (audioDiagnosticVisible) {
+        renderAudioDiagnostic(reason || lastAudioDiagnosticReason || 'console:yinpin');
+    }
+    return audioDiagnosticVisible;
+}
+
+function normalizeActionVoiceMode(mode = '') {
+    const raw = String(mode || '').trim().toLowerCase();
+    if (!raw || raw === ACTION_VOICE_MODE.AUTO) return ACTION_VOICE_MODE.AUTO;
+    if (raw === 'minnan' || raw === ACTION_VOICE_MODE.FORCE_MINNAN) return ACTION_VOICE_MODE.FORCE_MINNAN;
+    if (raw === 'mandarin' || raw === ACTION_VOICE_MODE.FORCE_MANDARIN) return ACTION_VOICE_MODE.FORCE_MANDARIN;
+    return '';
+}
+
+function setActionVoiceMode(mode = ACTION_VOICE_MODE.AUTO, reason = '') {
+    const normalized = normalizeActionVoiceMode(mode);
+    if (!normalized) {
+        renderAudioDiagnostic(`console:invalid-mode:${mode}`);
+        return actionVoiceMode;
+    }
+    actionVoiceMode = normalized;
+    renderAudioDiagnostic(reason || `console:${normalized}`);
+    return actionVoiceMode;
+}
+
+function registerVoiceModeConsoleCommands() {
+    if (actionVoiceConsoleRegistered) return;
+    actionVoiceConsoleRegistered = true;
+
+    window.setVoiceMode = (mode = ACTION_VOICE_MODE.AUTO) => setActionVoiceMode(mode, `console:${mode}`);
+    window.getVoiceMode = () => actionVoiceMode;
+    window.setAudioDiagnosticVisible = (visible = true) => setAudioDiagnosticVisible(visible, `console:yinpin:${visible ? 'on' : 'off'}`);
+    window.getAudioDiagnosticVisible = () => audioDiagnosticVisible;
+
+    const registerGetterCommand = (name, mode) => {
+        try {
+            Object.defineProperty(window, name, {
+                configurable: true,
+                enumerable: false,
+                get() {
+                    return setActionVoiceMode(mode, `console:${mode}`);
+                }
+            });
+        } catch {
+            // 某些环境对 window 属性受限时，退化为函数调用方式。
+            try {
+                window[name] = () => setActionVoiceMode(mode, `console:${mode}`);
+            } catch {
+                // 忽略调试命令注册失败，不影响对局流程。
+            }
+        }
+    };
+    const registerGetterAction = (name, action) => {
+        try {
+            Object.defineProperty(window, name, {
+                configurable: true,
+                enumerable: false,
+                get() {
+                    return action();
+                }
+            });
+        } catch {
+            try {
+                window[name] = action;
+            } catch {
+                // 忽略调试命令注册失败，不影响对局流程。
+            }
+        }
+    };
+
+    registerGetterCommand('minnan', ACTION_VOICE_MODE.FORCE_MINNAN);
+    registerGetterCommand('mandarin', ACTION_VOICE_MODE.FORCE_MANDARIN);
+    registerGetterCommand('auto', ACTION_VOICE_MODE.AUTO);
+    registerGetterAction('yinpin', () => setAudioDiagnosticVisible(true, 'console:yinpin'));
 }
 
 function setStatus(text, isError = false) {
@@ -680,12 +790,9 @@ function renderTableOutcomeEffects() {
         winnerArea.classList.add('win-mark');
         const text = document.createElement('div');
         text.className = 'result-text';
-        text.style.setProperty('--seat-rotate', `${getSeatTextRotationDegByPos(winnerPos)}deg`);
         text.textContent = outcomeWinnerTableText(outcome);
         applyOutcomeTextEffectClasses(text, outcome);
-        if (!placeEffectAtSeat(text, outcome.winner, { verticalRatio: 0.5 })) {
-            winnerArea.appendChild(text);
-        }
+        winnerArea.appendChild(text);
         fitTextToSingleLine(text, { minPx: 12, widthRatio: 0.9, container: winnerArea });
     }
 
@@ -696,11 +803,8 @@ function renderTableOutcomeEffects() {
             loserArea.classList.add('lose-mark');
             const text = document.createElement('div');
             text.className = 'result-text lose-text';
-            text.style.setProperty('--seat-rotate', `${getSeatTextRotationDegByPos(loserPos)}deg`);
             text.textContent = '点炮 👎🏻';
-            if (!placeEffectAtSeat(text, outcome.loser, { verticalRatio: 0.5 })) {
-                loserArea.appendChild(text);
-            }
+            loserArea.appendChild(text);
         }
     }
 }
@@ -746,7 +850,7 @@ function renderRoomActionSummary() {
     roomActionSummaryEl.textContent = `${summaryText}`;
 }
 
-function setBoardScore(pos, label, score, isDealer) {
+function setBoardScore(pos, label, score, isDealer, dealerStreak = 0) {
     const nameEl = document.getElementById(`seat-name-${pos}`);
     const scoreEl = document.getElementById(`score-${pos}`);
     const boardEl = document.getElementById(`score-board-${pos}`);
@@ -760,7 +864,8 @@ function setBoardScore(pos, label, score, isDealer) {
         if (isDealer) {
             const badge = document.createElement('span');
             badge.className = 'dealer-badge';
-            badge.textContent = '庄';
+            const streak = Math.max(0, Number(dealerStreak || 0));
+            badge.textContent = streak > 0 ? `连${streak}次庄` : '庄';
             boardEl.prepend(badge);
         }
     }
@@ -919,6 +1024,7 @@ function renderBoard() {
 
     if (!gameState || !gameState.hands) {
         selectedDiscardIndex = null;
+        document.getElementById('p-bottom')?.classList.remove('ai-takeover');
         setStatus('等待牌局初始化...');
         renderGoldDisplay('');
         PLAYER_POS.forEach((pos) => {
@@ -926,6 +1032,7 @@ function renderBoard() {
             document.getElementById(`river-${pos}`)?.replaceChildren();
             document.getElementById(`show-${pos}`)?.replaceChildren();
         });
+        renderTrusteeButtons();
         return;
     }
 
@@ -969,8 +1076,16 @@ function renderBoard() {
         const label = getCompactSeatLabel(seatId, seatObj);
         const delayReplacementDraw = delayedDrawSeat !== null && Number(seatId) === delayedDrawSeat;
         renderSeatArea(pos, seatId, gameState, pos === 'bottom' ? canDiscard : false, delayReplacementDraw);
-        setBoardScore(pos, label, scores[seatId], Number(gameState.dealerSeat) === Number(seatId));
+        setBoardScore(
+            pos,
+            label,
+            scores[seatId],
+            Number(gameState.dealerSeat) === Number(seatId),
+            Number(gameState.dealerStreak || 0)
+        );
     });
+
+    document.getElementById('p-bottom')?.classList.toggle('ai-takeover', control === 'bot');
 
     const turnSeat = Number.isInteger(gameState.turnSeat) ? gameState.turnSeat : -1;
     if (gameState.phase === 'playing' && turnSeat >= 0) {
@@ -1004,6 +1119,33 @@ function renderBoard() {
     } else {
         setStatus(`等待轮到你出牌（当前 ${seatNameAbsolute(turnSeat)}位）`);
     }
+
+    renderTrusteeButtons();
+}
+
+function renderTrusteeButtons() {
+    const buttons = [trusteeBtn, mobileTrusteeBtn].filter((el) => !!el);
+    if (!buttons.length) return;
+
+    const selfSeat = getSelfSeatNo();
+    const selfSeatKey = selfSeat === null ? null : String(selfSeat);
+    const selfSeatObj = selfSeatKey ? (roomState?.seats?.[selfSeatKey] || null) : null;
+    const gameState = getGameState();
+    const control = selfSeatKey
+        ? (gameState?.seatControls?.[selfSeatKey] || selfSeatObj?.control || 'human')
+        : 'human';
+    const visible = selfSeat !== null && !!selfSeatObj && !selfSeatObj.isBot;
+    const isTrustee = visible && control === 'bot';
+    const text = isTrustee ? '取消托管' : '托管（弱AI）';
+
+    buttons.forEach((btn) => {
+        if (!btn) return;
+        btn.style.display = visible ? 'inline-flex' : 'none';
+        btn.classList.toggle('active', isTrustee);
+        btn.textContent = text;
+        btn.disabled = !visible;
+        btn.setAttribute('aria-pressed', isTrustee ? 'true' : 'false');
+    });
 }
 
 function getActionAudioContext(createIfNeeded = false) {
@@ -1052,26 +1194,31 @@ function tryUnlockActionAudio(fromGesture = false) {
 }
 
 function getActionVoiceProfile() {
-    if (!('speechSynthesis' in window)) return { voice: null, isMinnan: false };
+    if (!('speechSynthesis' in window)) {
+        return { voice: null, isMinnan: false, mandarinVoice: null };
+    }
     if (actionVoiceProfile) return actionVoiceProfile;
 
     const voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
     const preferred = voices.slice().sort((a, b) => Number(!!b.localService) - Number(!!a.localService));
-    const minnanReg = /nan|hokkien|hok-lo|taiwanese|tai-yu|tai yu|台语|闽南/i;
-    const twReg = /zh[-_]?tw|zh[-_]?hk|zh[-_]?hant|taiwan|台湾|hong kong|繁中|繁體/i;
+    const minnanReg = /hokkien|hok[- ]?lo|min[- ]?nan|tai[- ]?yu|台语|臺語|闽南|閩南|nan[-_]?tw|taiwanese/i;
+    const cantoneseReg = /canton|yue|粤语|粵語|廣東|广东|hong kong|zh[-_]?hk|hk\b/i;
+    const mandarinReg = /mandarin|putonghua|普通话|國語|国语|华语|中文|chinese|zh[-_]?cn|zh[-_]?tw|cmn/i;
+    const voiceLabel = (v) => `${v?.name || ''} ${v?.lang || ''}`;
+    const isCantoneseVoice = (v) => cantoneseReg.test(voiceLabel(v));
+    const findVoice = (matcher) => preferred.find((v) => matcher(v) && !isCantoneseVoice(v)) || null;
 
-    let voice = preferred.find((v) => minnanReg.test(`${v.name} ${v.lang}`));
-    if (voice) {
-        actionVoiceProfile = { voice, isMinnan: true };
+    const minnanVoice = findVoice((v) => minnanReg.test(voiceLabel(v)));
+    const mandarinVoice = findVoice((v) => mandarinReg.test(voiceLabel(v)))
+        || findVoice((v) => /^zh/i.test(String(v?.lang || '')))
+        || null;
+
+    if (minnanVoice) {
+        actionVoiceProfile = { voice: minnanVoice, isMinnan: true, mandarinVoice };
         return actionVoiceProfile;
     }
 
-    voice = preferred.find((v) => twReg.test(`${v.name} ${v.lang}`));
-    if (!voice) {
-        voice = preferred.find((v) => /^zh/i.test(v.lang) || /chinese|中文|普通话|國語|国语|mandarin/i.test(v.name));
-    }
-
-    actionVoiceProfile = { voice: voice || null, isMinnan: false };
+    actionVoiceProfile = { voice: mandarinVoice, isMinnan: false, mandarinVoice };
     return actionVoiceProfile;
 }
 
@@ -1116,14 +1263,64 @@ function setupActionAudioUnlock() {
 function speakActionText(text, options = {}) {
     if (!text || !('speechSynthesis' in window)) return;
 
+    const synth = window.speechSynthesis;
+    const fallbackTried = options.fallbackTried === true;
+    const fallback = options.fallback || null;
+    const diagLabel = options.diagLabel || text;
+    const seq = ++actionSpeechSeq;
+    let started = false;
+
+    const retryFallback = (reason = 'unknown') => {
+        if (fallbackTried) return;
+        if (!fallback || !fallback.text) return;
+        if (seq !== actionSpeechSeq) return;
+        renderAudioDiagnostic(`voice:fallback:mandarin:${reason}:${diagLabel}`);
+        speakActionText(fallback.text, {
+            voice: fallback.voice || null,
+            lang: fallback.lang || 'zh-CN',
+            rate: fallback.rate ?? 1,
+            pitch: fallback.pitch ?? 1,
+            volume: fallback.volume ?? 1,
+            diagLabel: fallback.diagLabel || `${diagLabel}:fallback`,
+            fallbackTried: true
+        });
+    };
+
     const utter = new SpeechSynthesisUtterance(text);
     if (options.voice) utter.voice = options.voice;
     utter.lang = options.lang || options.voice?.lang || 'zh-CN';
     utter.rate = options.rate ?? 1;
     utter.pitch = options.pitch ?? 1;
     utter.volume = options.volume ?? 1;
-    if (options.cancel !== false) window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utter);
+    utter.onstart = () => {
+        if (seq !== actionSpeechSeq) return;
+        started = true;
+        renderAudioDiagnostic(`voice:start:${diagLabel}`);
+    };
+    utter.onerror = () => {
+        if (seq !== actionSpeechSeq) return;
+        renderAudioDiagnostic(`voice:error:${diagLabel}`);
+        retryFallback('error');
+    };
+
+    try {
+        synth.cancel();
+        synth.resume();
+        synth.speak(utter);
+    } catch {
+        renderAudioDiagnostic(`voice:throw:${diagLabel}`);
+        retryFallback('throw');
+        return;
+    }
+
+    if (!fallbackTried) {
+        setTimeout(() => {
+            if (seq !== actionSpeechSeq) return;
+            if (started) return;
+            if (synth.speaking || synth.pending) return;
+            retryFallback('nostart');
+        }, 260);
+    }
 }
 
 function playActionSfx(type = '') {
@@ -1216,9 +1413,51 @@ function playActionVoice(type = '') {
     playActionSfx(type);
 
     const profile = getActionVoiceProfile();
-    const text = profile.isMinnan ? voiceItem.minnan : voiceItem.mandarin;
-    const lang = profile.isMinnan ? (profile.voice?.lang || 'nan-TW') : (profile.voice?.lang || 'zh-CN');
-    speakActionText(text, { voice: profile.voice, lang, cancel: false, rate: 1.08 });
+    const mode = actionVoiceMode;
+    let text = voiceItem.mandarin || voiceItem.minnan || '';
+    let voice = profile.voice || null;
+    let lang = voice?.lang || 'zh-CN';
+    let rate = 1.02;
+    let diagLabel = `${type}:auto`;
+    let fallback = null;
+
+    if (mode === ACTION_VOICE_MODE.FORCE_MINNAN) {
+        text = voiceItem.minnan || voiceItem.mandarin || '';
+        voice = profile.voice || profile.mandarinVoice || null;
+        lang = voice?.lang || 'nan-TW';
+        rate = 1.08;
+        diagLabel = `${type}:force_minnan`;
+    } else if (mode === ACTION_VOICE_MODE.FORCE_MANDARIN) {
+        text = voiceItem.mandarin || voiceItem.minnan || '';
+        voice = profile.mandarinVoice || profile.voice || null;
+        lang = voice?.lang || 'zh-CN';
+        rate = 1.02;
+        diagLabel = `${type}:force_mandarin`;
+    } else {
+        const useMinnan = !!profile.isMinnan;
+        text = useMinnan ? (voiceItem.minnan || voiceItem.mandarin || '') : (voiceItem.mandarin || voiceItem.minnan || '');
+        voice = profile.voice || null;
+        lang = useMinnan ? (voice?.lang || 'nan-TW') : (voice?.lang || 'zh-CN');
+        rate = useMinnan ? 1.08 : 1.02;
+        diagLabel = `${type}:${useMinnan ? 'minnan' : 'mandarin'}`;
+        const fallbackVoice = profile.mandarinVoice || null;
+        const fallbackText = voiceItem.mandarin || text;
+        fallback = {
+            text: fallbackText,
+            voice: fallbackVoice,
+            lang: fallbackVoice?.lang || 'zh-CN',
+            rate: 1,
+            pitch: 1,
+            volume: 1,
+            diagLabel: `${type}:mandarin-fallback`
+        };
+    }
+
+    const speakOptions = { voice, lang, rate, diagLabel };
+    if (fallback && mode === ACTION_VOICE_MODE.AUTO) {
+        speakOptions.fallback = fallback;
+    }
+    speakActionText(text, speakOptions);
 }
 
 function actionAudioKey(gameState = null) {
@@ -1372,7 +1611,7 @@ function syncChuiFengCue(gameState = null, primeOnly = false) {
     }
     lastChuiFengCueKey = key;
     showChuiFengEffect();
-    playActionSfx('CHUI_FENG');
+    playActionVoice('CHUI_FENG');
     renderAudioDiagnostic('sync:CHUI_FENG');
 }
 
@@ -1455,6 +1694,12 @@ function sortTileCodesForDisplay(tiles = []) {
 }
 
 function buildChiChoiceButton(choice = [], discardTile = '', goldTile = '') {
+    const toDisplayTileCode = (tileCode) => {
+        if (tileCode === goldTile && goldTile && goldTile !== WHITE_DRAGON_TILE_CODE) {
+            return WHITE_DRAGON_TILE_CODE;
+        }
+        return tileCode;
+    };
     const tiles = [];
     if (Array.isArray(choice)) {
         choice.forEach((tile) => {
@@ -1465,9 +1710,7 @@ function buildChiChoiceButton(choice = [], discardTile = '', goldTile = '') {
     const orderedTiles = sortTileCodesForDisplay(tiles).slice(0, 3);
     const choicePayload = escapeHtml(JSON.stringify(choice));
     if (orderedTiles.length === 3) {
-        const chips = orderedTiles.map((tileCode) => `
-            <span class="chi-option-tile${tileCode === goldTile ? ' is-gold' : ''}">${escapeHtml(toTileEmoji(tileCode))}</span>
-        `).join('');
+        const chips = orderedTiles.map((tileCode) => renderTileHtml(toDisplayTileCode(tileCode))).join('');
         return `<button class="btn-act chi-option-btn" data-reaction-type="CHI" data-reaction-choice="${choicePayload}"><span class="chi-option-tiles">${chips}</span></button>`;
     }
     return `<button class="btn-act chi-option-btn" data-reaction-type="CHI" data-reaction-choice="${choicePayload}">吃</button>`;
@@ -1485,6 +1728,14 @@ function renderActionBar() {
     }
 
     const seatId = String(session.seatId);
+    const control = gameState?.seatControls?.[seatId] || 'human';
+    if (control === 'bot') {
+        chiSubMenuOpen = false;
+        actionBarEl.innerHTML = '';
+        actionBarEl.classList.add('hidden');
+        return;
+    }
+
     if (!isGoldRevealed(gameState)) {
         chiSubMenuOpen = false;
         actionBarEl.innerHTML = '';
@@ -1593,12 +1844,13 @@ function formatInstantType(entry = {}) {
     if (entry.type === 'MING_GANG') return `明/补杠 ${seatText}`;
     if (entry.type === 'HU_SETTLE') {
         const winner = Number.isInteger(entry.winnerSeat) ? getInstantSeatLabel(entry.winnerSeat) : seatText;
-        const headline = buildOutcomeHeadline({
+        const headlineRaw = buildOutcomeHeadline({
             isSelfDraw: !!entry.isSelfDraw,
             specialTypes: Array.isArray(entry.specialTypes) ? entry.specialTypes : [],
             flowerCount: Number(entry.flowerCount || 0),
             waterMul: Number(entry.waterMul || 1)
         });
+        const headline = String(headlineRaw || '').replace(/点炮$/, '点炮胡');
         return headline ? `胡牌结算 ${winner} ${headline}` : `胡牌结算 ${winner}`;
     }
     if (entry.type === 'CHUI_FENG') {
@@ -1774,6 +2026,7 @@ function render() {
     renderRoomMeta();
     renderRoomActionSummary();
     renderBoard();
+    renderTrusteeButtons();
     renderTableOutcomeEffects();
     renderActionBar();
     renderInstantScoreLog();
@@ -1856,7 +2109,9 @@ async function handleHandClick(event) {
     if (isGoldTile) {
         selectedDiscardIndex = null;
         renderBoard();
-        setStatus('已放下金牌');
+        const warning = '笨比金牌你都要打';
+        setStatus(warning, true);
+        showActionToast(warning, { isError: true });
         return;
     }
 
@@ -2006,9 +2261,52 @@ async function handleOpenGold() {
     });
 }
 
+async function handleToggleTrustee() {
+    const selfSeat = getSelfSeatNo();
+    const selfSeatKey = selfSeat === null ? null : String(selfSeat);
+    if (!roomState || !session || selfSeatKey === null) {
+        setStatus('当前身份不可托管', true);
+        return;
+    }
+
+    const seat = roomState?.seats?.[selfSeatKey];
+    if (!seat || seat.isBot) {
+        setStatus('当前座位不可托管', true);
+        return;
+    }
+
+    const gameState = getGameState();
+    const currentControl = gameState?.seatControls?.[selfSeatKey] || seat.control || 'human';
+    const targetControl = currentControl === 'bot' ? 'human' : 'bot';
+    const buttons = [trusteeBtn, mobileTrusteeBtn].filter((el) => !!el);
+    buttons.forEach((btn) => {
+        btn.disabled = true;
+    });
+
+    try {
+        await setSeatControlMode(roomCode, session.uid, selfSeatKey, targetControl);
+        selectedDiscardIndex = null;
+        kickHostLoopSoon();
+        const msg = targetControl === 'bot' ? '已开启托管（弱AI）' : '已取消托管';
+        setStatus(msg);
+        showActionToast(msg);
+    } catch (error) {
+        const msg = error?.message || '切换托管失败';
+        setStatus(msg, true);
+        showActionToast(msg, { isError: true });
+    } finally {
+        buttons.forEach((btn) => {
+            btn.disabled = false;
+        });
+        renderTrusteeButtons();
+    }
+}
+
 async function handleLeaveRoom() {
     leaveRoomBtn.disabled = true;
     if (mobileLeaveRoomBtn) mobileLeaveRoomBtn.disabled = true;
+    if (trusteeBtn) trusteeBtn.disabled = true;
+    if (mobileTrusteeBtn) mobileTrusteeBtn.disabled = true;
     if (centerLeaveRoomBtn) centerLeaveRoomBtn.disabled = true;
     try {
         await leaveRoom(roomCode, session.uid, session.seatId);
@@ -2230,6 +2528,7 @@ async function bootstrap() {
 
         detachPresence = await attachPresence(roomCode, session.uid, session.seatId, session.nickname);
         setupActionAudioUnlock();
+        registerVoiceModeConsoleCommands();
         renderAudioDiagnostic('bootstrap');
 
         document.getElementById('hand-bottom')?.addEventListener('click', handleHandClick);
@@ -2238,6 +2537,8 @@ async function bootstrap() {
         document.addEventListener('click', handleBoardOutsideClick);
         leaveRoomBtn?.addEventListener('click', handleLeaveRoom);
         mobileLeaveRoomBtn?.addEventListener('click', handleLeaveRoom);
+        trusteeBtn?.addEventListener('click', handleToggleTrustee);
+        mobileTrusteeBtn?.addEventListener('click', handleToggleTrustee);
         centerLeaveRoomBtn?.addEventListener('click', handleLeaveRoom);
         nextRoundBtn?.addEventListener('click', handleNextRound);
         mobileNextRoundBtn?.addEventListener('click', handleNextRound);
@@ -2281,4 +2582,5 @@ bootstrap().catch((error) => {
     cleanupBattleRuntime();
     setStatus(error.message || '实战页面初始化失败', true);
 });
+
 
