@@ -3,12 +3,22 @@ const TILE_ORDER = Object.freeze({ W: 0, T: 1, S: 2, Z: 3, H: 4 });
 const SEAT_IDS = Object.freeze(['0', '1', '2', '3']);
 const CLAIM_TIMEOUT_MS = 5000;
 const CLAIM_PRIORITY = Object.freeze({ HU: 0, PENG: 1, GANG: 1, CHI: 2 });
-const BOT_ACTION_DELAY_MS = 280;
+const BOT_ACTION_DELAY_FAST_MS = 280;
+const BOT_ACTION_DELAY_NORMAL_MIN_MS = 450;
+const BOT_ACTION_DELAY_NORMAL_MAX_MS = 600;
+const BOT_CLAIM_DELAY_FAST_MS = 0;
+const BOT_CLAIM_DELAY_NORMAL_MIN_MS = 250;
+const BOT_CLAIM_DELAY_NORMAL_MAX_MS = 400;
 const MAX_INSTANT_SCORE_LOG_SIZE = 400;
 const WHITE_DRAGON_TILE = 'Z7';
+const AI_SPEED_MODE = Object.freeze({
+    NORMAL: 'normal',
+    FAST: 'fast'
+});
 export const SUPPORTED_ONLINE_ACTION_TYPES = Object.freeze([
     'ROUND_START',
     'OPEN_GOLD',
+    'SET_AI_SPEED',
     'DRAW',
     'DISCARD',
     'CHI',
@@ -162,6 +172,9 @@ function normalizeRuntimeStateShape(state, now = Date.now()) {
     if (!Number.isInteger(state.roundNo)) state.roundNo = 1;
     if (!Number.isInteger(state.roundCount)) state.roundCount = 0;
     if (!Number.isInteger(state.turnSeat)) state.turnSeat = state.dealerSeat;
+    state.aiSpeedMode = normalizeAiSpeedMode(state.aiSpeedMode);
+    if (!Number.isFinite(Number(state.botActionReadyAt))) state.botActionReadyAt = 0;
+    if (!Number.isFinite(Number(state.botClaimReadyAt))) state.botClaimReadyAt = 0;
     if (typeof state.goldRevealed !== 'boolean') state.goldRevealed = true;
     if (state.goldRevealed === false) {
         state.goldTile = null;
@@ -189,6 +202,31 @@ function normalizeForcedHostGoldCount(value) {
     if (!Number.isInteger(n)) return null;
     if (n < 1 || n > 3) return null;
     return n;
+}
+
+function normalizeAiSpeedMode(mode = '') {
+    const raw = String(mode || '').trim().toLowerCase();
+    if (raw === AI_SPEED_MODE.FAST) return AI_SPEED_MODE.FAST;
+    return AI_SPEED_MODE.NORMAL;
+}
+
+function randomDelayBetween(minMs, maxMs) {
+    const min = Math.max(0, Number(minMs || 0));
+    const max = Math.max(min, Number(maxMs || min));
+    if (max <= min) return min;
+    return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+function getBotActionDelayMs(state = {}) {
+    const mode = normalizeAiSpeedMode(state?.aiSpeedMode);
+    if (mode === AI_SPEED_MODE.FAST) return BOT_ACTION_DELAY_FAST_MS;
+    return randomDelayBetween(BOT_ACTION_DELAY_NORMAL_MIN_MS, BOT_ACTION_DELAY_NORMAL_MAX_MS);
+}
+
+function getBotClaimDelayMs(state = {}) {
+    const mode = normalizeAiSpeedMode(state?.aiSpeedMode);
+    if (mode === AI_SPEED_MODE.FAST) return BOT_CLAIM_DELAY_FAST_MS;
+    return randomDelayBetween(BOT_CLAIM_DELAY_NORMAL_MIN_MS, BOT_CLAIM_DELAY_NORMAL_MAX_MS);
 }
 
 function findHostSeatId(seats = {}, hostUid = null) {
@@ -657,6 +695,7 @@ function settleWin(state, { winnerSeat, loserSeat = null, isSelfDraw, reason, wi
         seatId: winner,
         winnerSeat: winner,
         loserSeat: isSelfDraw ? null : Number(loserSeat),
+        dealerSeat: dealerBefore,
         isSelfDraw: !!isSelfDraw,
         winTile: winTile || null,
         specialTypes: Array.isArray(specialTypes) ? [...specialTypes] : [],
@@ -1187,7 +1226,6 @@ function applyClaimWin(state, claim, now) {
 
     const discardSeatId = String(pending.discard.seatId);
     const discardTile = pending.discard.tile;
-    removeLastDiscardFromRiver(state, discardSeatId, discardTile);
 
     if (claim.type === 'HU') {
         const huInfo = canHuWithDiscard(state, seatId, discardTile);
@@ -1209,6 +1247,8 @@ function applyClaimWin(state, claim, now) {
         state.lastDiscard = null;
         return;
     }
+
+    removeLastDiscardFromRiver(state, discardSeatId, discardTile);
 
     const hand = state.hands[seatId] || [];
 
@@ -1550,6 +1590,9 @@ function createInitialGameState({
         outcome: null,
         instantScoreLog: [],
         chuiFeng: createChuiFengState(),
+        aiSpeedMode: AI_SPEED_MODE.NORMAL,
+        botActionReadyAt: 0,
+        botClaimReadyAt: 0,
         seatControls: createSeatControlMap(seats),
         lastAction: {
             type: 'ROUND_START',
@@ -1592,6 +1635,9 @@ function createNextRoundState(previousState, now = Date.now(), options = {}) {
 
     const previousInstantLog = Array.isArray(previousState?.instantScoreLog) ? previousState.instantScoreLog : [];
     nextState.instantScoreLog = previousInstantLog.slice(-MAX_INSTANT_SCORE_LOG_SIZE);
+    nextState.aiSpeedMode = normalizeAiSpeedMode(previousState?.aiSpeedMode);
+    nextState.botActionReadyAt = 0;
+    nextState.botClaimReadyAt = 0;
     return nextState;
 }
 
@@ -1636,6 +1682,15 @@ export function applyOnlineGameAction(gameState, action, now = Date.now()) {
         if (canOpen) {
             revealGoldTile(current, now, actionSeatNo);
         }
+        markAction(current, action, now);
+        return current;
+    }
+
+    if (action.type === 'SET_AI_SPEED') {
+        const mode = normalizeAiSpeedMode(action?.payload?.mode);
+        current.aiSpeedMode = mode;
+        current.botActionReadyAt = 0;
+        current.botClaimReadyAt = 0;
         markAction(current, action, now);
         return current;
     }
@@ -1725,12 +1780,17 @@ export function applyOnlineGameAction(gameState, action, now = Date.now()) {
 
 export function runBotTurns(gameState, seats = {}, now = Date.now(), maxSteps = 12) {
     let state = syncSeatControlsToGameState(gameState, seats, now);
-    const nextReadyAt = Number(state.botActionReadyAt || 0);
-    state.botActionReadyAt = Number.isFinite(nextReadyAt) ? nextReadyAt : 0;
+    state.botActionReadyAt = Number.isFinite(Number(state.botActionReadyAt || 0))
+        ? Number(state.botActionReadyAt || 0)
+        : 0;
+    state.botClaimReadyAt = Number.isFinite(Number(state.botClaimReadyAt || 0))
+        ? Number(state.botClaimReadyAt || 0)
+        : 0;
     let appliedSteps = 0;
 
     if (state.phase === 'ended') {
         state.botActionReadyAt = 0;
+        state.botClaimReadyAt = 0;
         return { state, appliedSteps };
     }
 
@@ -1739,32 +1799,52 @@ export function runBotTurns(gameState, seats = {}, now = Date.now(), maxSteps = 
 
         if (state.goldRevealed === false) {
             state.botActionReadyAt = 0;
+            state.botClaimReadyAt = 0;
             break;
         }
 
         if (state.pendingClaim) {
             autoDecideBotClaims(state);
+            const claimReadyAt = Number(state.botClaimReadyAt || 0);
+            if (!claimReadyAt) {
+                const claimDelay = getBotClaimDelayMs(state);
+                if (claimDelay > 0) {
+                    state.botClaimReadyAt = tick + claimDelay;
+                    break;
+                }
+                state.botClaimReadyAt = tick;
+            }
+            if (tick < Number(state.botClaimReadyAt || 0)) break;
+
             const resolved = resolvePendingClaimIfReady(state, tick, false);
+            state.botClaimReadyAt = 0;
             if (resolved) {
                 appliedSteps += 1;
+                state.botActionReadyAt = tick + getBotActionDelayMs(state);
                 continue;
             }
             break;
         }
+        state.botClaimReadyAt = 0;
 
         const seatId = String(state.turnSeat);
         const control = state.seatControls?.[seatId];
         if (control !== 'bot') {
             state.botActionReadyAt = 0;
+            state.botClaimReadyAt = 0;
             break;
         }
 
         const readyAt = Number(state.botActionReadyAt || 0);
         if (!readyAt) {
-            state.botActionReadyAt = tick + BOT_ACTION_DELAY_MS;
-            break;
+            const actionDelay = getBotActionDelayMs(state);
+            if (actionDelay > 0) {
+                state.botActionReadyAt = tick + actionDelay;
+                break;
+            }
+            state.botActionReadyAt = tick;
         }
-        if (tick < readyAt) break;
+        if (tick < Number(state.botActionReadyAt || 0)) break;
 
         const huInfo = canHuSelfDraw(state, seatId);
         if (huInfo.canHu) {
@@ -1775,7 +1855,7 @@ export function runBotTurns(gameState, seats = {}, now = Date.now(), maxSteps = 
                 ts: tick
             }, tick);
             appliedSteps += 1;
-            state.botActionReadyAt = tick + BOT_ACTION_DELAY_MS;
+            state.botActionReadyAt = tick + getBotActionDelayMs(state);
             continue;
         }
 
@@ -1788,7 +1868,7 @@ export function runBotTurns(gameState, seats = {}, now = Date.now(), maxSteps = 
                 ts: tick
             }, tick);
             appliedSteps += 1;
-            state.botActionReadyAt = tick + BOT_ACTION_DELAY_MS;
+            state.botActionReadyAt = tick + getBotActionDelayMs(state);
             continue;
         }
 
@@ -1801,7 +1881,7 @@ export function runBotTurns(gameState, seats = {}, now = Date.now(), maxSteps = 
                 ts: tick
             }, tick);
             appliedSteps += 1;
-            state.botActionReadyAt = tick + BOT_ACTION_DELAY_MS;
+            state.botActionReadyAt = tick + getBotActionDelayMs(state);
             continue;
         }
 
@@ -1816,7 +1896,7 @@ export function runBotTurns(gameState, seats = {}, now = Date.now(), maxSteps = 
         }, tick);
 
         appliedSteps += 1;
-        state.botActionReadyAt = tick + BOT_ACTION_DELAY_MS;
+        state.botActionReadyAt = tick + getBotActionDelayMs(state);
         if (!state.wall.length) break;
     }
 

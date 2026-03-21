@@ -21,7 +21,7 @@ import { showActionToast } from './ui-toast.js';
 // 已提牌，再次点击同一张牌打出
 // 复制失败，请检查浏览器剪贴板权限
 
-const BUILD_TAG = '20260321r42';
+const BUILD_TAG = '20260321r45';
 const HOST_LOOP_IDLE_INTERVAL_MS = 650;
 const HOST_LOOP_ACTIVE_INTERVAL_MS = 100;
 const HOST_LOOP_BURST_WINDOW_MS = 2800;
@@ -87,6 +87,10 @@ const ACTION_VOICE_MODE = Object.freeze({
     FORCE_MINNAN: 'force_minnan',
     FORCE_MANDARIN: 'force_mandarin'
 });
+const AI_SPEED_MODE = Object.freeze({
+    NORMAL: 'normal',
+    FAST: 'fast'
+});
 const AUDIO_UNLOCK_EVENTS = ['click', 'touchend', 'keydown'];
 
 const roomMetaEl = document.getElementById('room-meta');
@@ -96,6 +100,8 @@ const leaveRoomBtn = document.getElementById('leave-room-btn');
 const mobileLeaveRoomBtn = document.getElementById('mobile-leave-room-btn');
 const trusteeBtn = document.getElementById('trustee-btn');
 const mobileTrusteeBtn = document.getElementById('mobile-trustee-btn');
+const aiSpeedToggleBtn = document.getElementById('ai-speed-toggle-btn');
+const mobileAiSpeedToggleBtn = document.getElementById('mobile-ai-speed-toggle-btn');
 const nextRoundBtn = document.getElementById('next-round-btn');
 const mobileNextRoundBtn = document.getElementById('mobile-next-round-btn');
 const centerNextRoundBtn = document.getElementById('center-next-round-btn');
@@ -410,6 +416,7 @@ function actionTypeLabel(type = '') {
     const map = {
         ROUND_START: '下一局',
         OPEN_GOLD: '开金',
+        SET_AI_SPEED: 'AI速度',
         DRAW: '摸牌',
         DISCARD: '出牌',
         CHI: '吃',
@@ -470,6 +477,11 @@ function formatActionPayloadText(type, payload = {}) {
 
     if (['AN_GANG', 'BU_GANG', 'GANG', 'PENG'].includes(actionType) && typeof payload.char === 'string' && payload.char) {
         return ` ${toTileEmoji(payload.char)}`;
+    }
+
+    if (actionType === 'SET_AI_SPEED') {
+        const mode = normalizeAiSpeedMode(payload.mode);
+        return mode === AI_SPEED_MODE.FAST ? ' 加速' : ' 常速';
     }
 
     if (actionType === 'CHI' && Array.isArray(payload.choice) && payload.choice.length) {
@@ -533,6 +545,25 @@ function isHost() {
 
 function getGameState() {
     return roomState?.game?.state || null;
+}
+
+function isMobileBattleViewport() {
+    if (window.matchMedia) {
+        const isPortraitMobile = window.matchMedia('(max-width: 767px)').matches;
+        const isLandscapeMobile = window.matchMedia('(max-width: 1024px) and (orientation: landscape)').matches;
+        return isPortraitMobile || isLandscapeMobile;
+    }
+    return Number(window.innerWidth || 0) <= 1024;
+}
+
+function isDesktopViewport() {
+    return !isMobileBattleViewport();
+}
+
+function normalizeAiSpeedMode(mode = '') {
+    const raw = String(mode || '').trim().toLowerCase();
+    if (raw === AI_SPEED_MODE.FAST) return AI_SPEED_MODE.FAST;
+    return AI_SPEED_MODE.NORMAL;
 }
 
 function selfHuPromptKey(gameState = getGameState(), seatId = getSelfSeatNo()) {
@@ -1146,6 +1177,36 @@ function renderTrusteeButtons() {
         btn.disabled = !visible;
         btn.setAttribute('aria-pressed', isTrustee ? 'true' : 'false');
     });
+}
+
+function renderAiSpeedToggleButton() {
+    const gameState = getGameState();
+    const showDesktop = !!roomState && isDesktopViewport() && isHost() && !!gameState;
+    const showMobile = !!roomState && isMobileBattleViewport() && isHost() && !!gameState;
+    const speedMode = normalizeAiSpeedMode(gameState?.aiSpeedMode);
+    const isFast = speedMode === AI_SPEED_MODE.FAST;
+    const title = isFast ? 'AI加速已开启，点击切换常速' : 'AI当前常速，点击开启加速';
+    const syncButton = (btn, visible) => {
+        if (!btn) return;
+        if (!visible) {
+            btn.style.display = 'none';
+            btn.disabled = true;
+            btn.classList.remove('fast');
+            btn.setAttribute('aria-pressed', 'false');
+            btn.title = 'AI加速';
+            btn.setAttribute('aria-label', 'AI加速');
+            return;
+        }
+        btn.style.display = 'inline-flex';
+        btn.disabled = false;
+        btn.classList.toggle('fast', isFast);
+        btn.setAttribute('aria-pressed', isFast ? 'true' : 'false');
+        btn.title = title;
+        btn.setAttribute('aria-label', title);
+    };
+
+    syncButton(aiSpeedToggleBtn, showDesktop);
+    syncButton(mobileAiSpeedToggleBtn, showMobile);
 }
 
 function getActionAudioContext(createIfNeeded = false) {
@@ -1874,6 +1935,25 @@ function formatInstantDeltaLine(delta = []) {
     }).join(' | ');
 }
 
+function formatInstantDeltaLineHtml(delta = [], entry = {}, options = {}) {
+    const showDealerBadge = options?.showDealerBadge === true;
+    const dealerSeat = showDealerBadge && Number.isInteger(Number(entry?.dealerSeat))
+        ? Number(entry.dealerSeat)
+        : null;
+    return [0, 1, 2, 3].map((seatId) => {
+        const value = Number(delta[seatId] || 0);
+        const sign = value > 0 ? '+' : '';
+        const scoreClass = value > 0
+            ? 'instant-delta-plus'
+            : (value < 0 ? 'instant-delta-minus' : 'instant-delta-zero');
+        const seatText = escapeHtml(getInstantSeatLabel(seatId));
+        const dealerBadge = dealerSeat !== null && Number(seatId) === dealerSeat
+            ? '<span class="dealer-badge instant-dealer-badge">庄</span>'
+            : '';
+        return `<span class="instant-seat-delta">${dealerBadge}${seatText} <span class="instant-delta-value ${scoreClass}">${sign}${value}</span></span>`;
+    }).join('<span class="instant-delta-sep"> | </span>');
+}
+
 function renderInstantScoreLog() {
     if (!instantScoreLogEl) return;
     const gameState = getGameState();
@@ -1889,12 +1969,17 @@ function renderInstantScoreLog() {
         return;
     }
 
-    const rows = logs.slice().reverse().map((entry) => `
+    const rows = logs.slice().reverse().map((entry) => {
+        const deltaHtml = formatInstantDeltaLineHtml(entry.delta || [], entry, {
+            showDealerBadge: entry?.type === 'HU_SETTLE'
+        });
+        return `
         <div class="instant-row">
             <div class="instant-type">${escapeHtml(formatInstantRound(entry))} · ${escapeHtml(formatInstantType(entry))} · ${escapeHtml(formatInstantTs(entry.ts))}</div>
-            <div class="instant-delta">${escapeHtml(formatInstantDeltaLine(entry.delta || []))}</div>
+            <div class="instant-delta">${deltaHtml}</div>
         </div>
-    `);
+    `;
+    });
     instantScoreLogEl.innerHTML = rows.join('');
 }
 
@@ -2027,6 +2112,7 @@ function render() {
     renderRoomActionSummary();
     renderBoard();
     renderTrusteeButtons();
+    renderAiSpeedToggleButton();
     renderTableOutcomeEffects();
     renderActionBar();
     renderInstantScoreLog();
@@ -2302,11 +2388,56 @@ async function handleToggleTrustee() {
     }
 }
 
+async function handleToggleAiSpeed(event) {
+    if (event?.isTrusted) {
+        primeActionVoiceEngine(true);
+    }
+    if (!aiSpeedToggleBtn && !mobileAiSpeedToggleBtn) return;
+    if (!roomState || !session || !isHost()) {
+        const message = '仅房主可切换AI速度';
+        setStatus(message, true);
+        showActionToast(message, { isError: true });
+        return;
+    }
+
+    const gameState = getGameState();
+    if (!gameState) {
+        const message = '牌局尚未初始化，暂不能切换AI速度';
+        setStatus(message, true);
+        showActionToast(message, { isError: true });
+        return;
+    }
+
+    const currentMode = normalizeAiSpeedMode(gameState.aiSpeedMode);
+    const targetMode = currentMode === AI_SPEED_MODE.FAST ? AI_SPEED_MODE.NORMAL : AI_SPEED_MODE.FAST;
+    if (aiSpeedToggleBtn) aiSpeedToggleBtn.disabled = true;
+    if (mobileAiSpeedToggleBtn) mobileAiSpeedToggleBtn.disabled = true;
+    try {
+        const success = await submitIntent('SET_AI_SPEED', { mode: targetMode }, {
+            pendingText: targetMode === AI_SPEED_MODE.FAST ? '提交AI加速...' : '提交AI常速...',
+            successText: targetMode === AI_SPEED_MODE.FAST ? 'AI已切换为加速' : 'AI已切换为常速'
+        });
+        const msg = targetMode === AI_SPEED_MODE.FAST ? 'AI已加速' : 'AI已恢复常速';
+        if (success) {
+            setStatus(msg);
+            showActionToast(msg);
+        } else {
+            showActionToast('切换AI速度失败', { isError: true });
+        }
+    } finally {
+        if (aiSpeedToggleBtn) aiSpeedToggleBtn.disabled = false;
+        if (mobileAiSpeedToggleBtn) mobileAiSpeedToggleBtn.disabled = false;
+        renderAiSpeedToggleButton();
+    }
+}
+
 async function handleLeaveRoom() {
     leaveRoomBtn.disabled = true;
     if (mobileLeaveRoomBtn) mobileLeaveRoomBtn.disabled = true;
     if (trusteeBtn) trusteeBtn.disabled = true;
     if (mobileTrusteeBtn) mobileTrusteeBtn.disabled = true;
+    if (aiSpeedToggleBtn) aiSpeedToggleBtn.disabled = true;
+    if (mobileAiSpeedToggleBtn) mobileAiSpeedToggleBtn.disabled = true;
     if (centerLeaveRoomBtn) centerLeaveRoomBtn.disabled = true;
     try {
         await leaveRoom(roomCode, session.uid, session.seatId);
@@ -2539,12 +2670,15 @@ async function bootstrap() {
         mobileLeaveRoomBtn?.addEventListener('click', handleLeaveRoom);
         trusteeBtn?.addEventListener('click', handleToggleTrustee);
         mobileTrusteeBtn?.addEventListener('click', handleToggleTrustee);
+        aiSpeedToggleBtn?.addEventListener('click', handleToggleAiSpeed);
+        mobileAiSpeedToggleBtn?.addEventListener('click', handleToggleAiSpeed);
         centerLeaveRoomBtn?.addEventListener('click', handleLeaveRoom);
         nextRoundBtn?.addEventListener('click', handleNextRound);
         mobileNextRoundBtn?.addEventListener('click', handleNextRound);
         centerNextRoundBtn?.addEventListener('click', handleNextRound);
         centerOpenGoldBtn?.addEventListener('click', handleOpenGold);
         document.addEventListener('click', handleRuleModalClick);
+        window.addEventListener('resize', renderAiSpeedToggleButton);
         huOverlayEl?.addEventListener('click', () => {
             const key = outcomeKey(getGameState()?.outcome || null);
             dismissedOutcomeKey = key;

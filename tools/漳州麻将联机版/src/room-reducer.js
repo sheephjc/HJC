@@ -166,6 +166,10 @@ export function defaultStateReducer(gameState, actionIntent, now = Date.now(), c
     const dealerIsBotControlled = isDealerBotControlled(state);
     const actorIsHost = !!hostUid && !!actorUid && String(hostUid) === String(actorUid);
 
+    if (actionType === 'SET_AI_SPEED' && !actorIsHost) {
+        return state;
+    }
+
     if (DEALER_ONLY_ACTION_TYPES.has(actionType)) {
         if (dealerIsBotControlled) {
             if (!actorIsHost) return state;

@@ -1,6 +1,7 @@
 export const ACTION_TYPES = Object.freeze([
     'ROUND_START',
     'OPEN_GOLD',
+    'SET_AI_SPEED',
     'DRAW',
     'DISCARD',
     'CHI',
