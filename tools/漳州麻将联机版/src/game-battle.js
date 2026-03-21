@@ -21,7 +21,7 @@ import { showActionToast } from './ui-toast.js';
 // 已提牌，再次点击同一张牌打出
 // 复制失败，请检查浏览器剪贴板权限
 
-const BUILD_TAG = '20260320r41';
+const BUILD_TAG = '20260321r42';
 const HOST_LOOP_IDLE_INTERVAL_MS = 650;
 const HOST_LOOP_ACTIVE_INTERVAL_MS = 100;
 const HOST_LOOP_BURST_WINDOW_MS = 2800;
@@ -1919,14 +1919,14 @@ function buildOutcomeFormulaText(outcome = null) {
     const multiplierSuffix = multiplierLabels.length ? ` ${multiplierLabels.join(' ')}` : '';
 
     if (isQiangGangHu && Number.isInteger(loser) && loser >= 0 && loser <= 3) {
-        let basePay = 1;
         if (winnerIsDealer) {
             const dealerMul = streak >= 1 ? Math.pow(2, streak) : 1;
-            basePay = 2 * dealerMul;
-        } else {
-            basePay = loser === dealer ? 2 : 1;
+            const basePart = `(1底×${2 * dealerMul}庄家)${multiplierSuffix}×3闲家`;
+            return `${basePart}（杠者代付三家） = ${total}`;
         }
-        return `${basePay}底${multiplierSuffix}×1点炮家 = ${total}`;
+        const zhuangPart = `(1底+1庄)${multiplierSuffix}×1庄家`;
+        const xianPart = `(1底)${multiplierSuffix}×2闲家`;
+        return `${zhuangPart} + ${xianPart}（杠者代付三家） = ${total}`;
     }
 
     if (winnerIsDealer) {

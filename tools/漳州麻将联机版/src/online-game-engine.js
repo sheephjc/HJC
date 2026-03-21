@@ -398,11 +398,11 @@ function removeOneTileByLogicCode(hand, logicTile, goldTile) {
     for (let i = 0; i < hand.length; i += 1) {
         if (isGold(hand[i], goldTile)) continue;
         if (toLogicTileCode(hand[i], goldTile) === target) {
-            hand.splice(i, 1);
-            return true;
+            const [removed] = hand.splice(i, 1);
+            return removed || null;
         }
     }
-    return false;
+    return null;
 }
 
 function removeTilesByLogic(hand, tile, count, goldTile) {
@@ -589,14 +589,18 @@ function settleWin(state, { winnerSeat, loserSeat = null, isSelfDraw, reason, wi
     const waterMul = getWaterMultiplier(flowerCount);
     const rawSpecialMul = getSpecialMultiplier(specialTypes);
     const isQiangGangHu = specialTypes.includes('抢杠胡');
-    const specialMul = isQiangGangHu ? (rawSpecialMul / 2) : rawSpecialMul;
+    const specialMul = rawSpecialMul;
 
     const delta = [0, 0, 0, 0];
     let totalWin = 0;
     const qiangPayer = Number(loserSeat);
     const shouldUseSinglePayer = isQiangGangHu && Number.isInteger(qiangPayer) && qiangPayer >= 0 && qiangPayer <= 3;
     if (shouldUseSinglePayer) {
-        const pay = getBasePay(state, winner, qiangPayer, false);
+        let pay = 0;
+        for (let i = 0; i < 4; i += 1) {
+            if (i === winner) continue;
+            pay += getBasePay(state, winner, i, false);
+        }
         const finalScore = pay * waterMul * specialMul;
         delta[qiangPayer] -= finalScore;
         delta[winner] += finalScore;
@@ -965,13 +969,6 @@ function applyAnGangAction(state, action, now) {
     const target = action.payload?.char || action.payload?.tile || options[0];
     if (!options.includes(target)) return false;
 
-    const qiangGang = buildQiangGangPending(state, seatNo, target, 'AN_GANG', now);
-    if (qiangGang) {
-        state.pendingClaim = qiangGang;
-        state.currentDraw = null;
-        return true;
-    }
-
     return applyAnGangCommit(state, seatId, target, now);
 }
 
@@ -1254,14 +1251,16 @@ function applyClaimWin(state, claim, now) {
             return;
         }
 
-        const okA = removeOneTileByLogicCode(hand, choice[0], state.goldTile);
-        const okB = removeOneTileByLogicCode(hand, choice[1], state.goldTile);
-        if (!okA || !okB) {
+        const removedA = removeOneTileByLogicCode(hand, choice[0], state.goldTile);
+        const removedB = removeOneTileByLogicCode(hand, choice[1], state.goldTile);
+        if (!removedA || !removedB) {
+            if (removedA) hand.push(removedA);
+            if (removedB) hand.push(removedB);
             state.pendingClaim = null;
             return;
         }
 
-        const meld = sortTiles([choice[0], discardTile, choice[1]], state.goldTile);
+        const meld = sortTiles([removedA, discardTile, removedB], state.goldTile);
         state.shows[seatId].push({ type: 'CHI', tiles: meld });
         state.turnSeat = Number(seatId);
         state.lastDiscard = null;
