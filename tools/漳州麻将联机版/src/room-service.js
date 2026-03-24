@@ -3,7 +3,6 @@ import {
     SEAT_IDS,
     buildHumanSeat,
     buildBotSeat,
-    getOnlineHumanHostUid,
     createStartedGameState,
     normalizeSeatsForStart,
     syncHumanSeatControls,
@@ -12,6 +11,7 @@ import {
 } from './room-reducer.js';
 
 const ROOM_CODE_LEN = 6;
+const MAX_SPECTATORS = 5;
 const INVALID_PATH_SEGMENT_RE = /[.#$\[\]\/\u0000-\u001F\u007F]/;
 const HOST_TICK_IDLE_HINT_MS = 700;
 const HOST_TICK_ACTIVE_HINT_MS = 100;
@@ -173,9 +173,72 @@ function isValidSeatId(seatId) {
     return SEAT_IDS.includes(String(seatId));
 }
 
+function canWriteOwnedHumanSeat(seat, expectedSeatId, uid) {
+    if (!seat || typeof seat !== 'object') return false;
+    if (seat.isBot !== false) return false;
+    if (seat.reservedUid !== uid) return false;
+    if (seat.uid !== uid) return false;
+    // 与 firebase-rules.json 的 seatId 类型/值校验保持一致，避免触发 permission_denied。
+    if (seat.seatId !== expectedSeatId) return false;
+    return true;
+}
+
 function normalizeNickname(nickname) {
     const cleaned = toSafeString(nickname).trim().replace(/\s+/g, ' ');
     return cleaned.slice(0, 16) || '游客';
+}
+
+function collectTakenNicknames(room = {}, excludeUid = '') {
+    const taken = new Set();
+    const skipUid = toSafeString(excludeUid);
+    const seats = room?.seats || {};
+    const presence = room?.presence || {};
+    const normalizeExistingNick = (value) => toSafeString(value).trim().replace(/\s+/g, ' ').slice(0, 16);
+
+    for (const seatId of Object.keys(seats)) {
+        const seat = seats?.[seatId];
+        if (!seat || seat.isBot) continue;
+        const ownerUid = toSafeString(seat.reservedUid || seat.uid);
+        if (skipUid && ownerUid === skipUid) continue;
+        const nick = normalizeExistingNick(seat.nickname || '');
+        if (nick) taken.add(nick);
+    }
+
+    for (const [presenceUid, entry] of Object.entries(presence)) {
+        if (skipUid && toSafeString(presenceUid) === skipUid) continue;
+        const nick = normalizeExistingNick(entry?.nickname || '');
+        if (nick) taken.add(nick);
+    }
+
+    return taken;
+}
+
+function randomThreeDigitSuffix() {
+    return String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+}
+
+function withRandomThreeDigitSuffix(baseNickname, takenNicknames) {
+    if (!takenNicknames.has(baseNickname)) return baseNickname;
+
+    const base = normalizeNickname(baseNickname);
+    const prefix = base.slice(0, Math.max(1, 16 - 3));
+    const attempts = new Set();
+
+    for (let i = 0; i < 64; i += 1) {
+        const suffix = randomThreeDigitSuffix();
+        if (attempts.has(suffix)) continue;
+        attempts.add(suffix);
+        const candidate = `${prefix}${suffix}`.slice(0, 16);
+        if (!takenNicknames.has(candidate)) return candidate;
+    }
+
+    for (let i = 0; i <= 999; i += 1) {
+        const suffix = String(i).padStart(3, '0');
+        const candidate = `${prefix}${suffix}`.slice(0, 16);
+        if (!takenNicknames.has(candidate)) return candidate;
+    }
+
+    return `${prefix}${randomThreeDigitSuffix()}`.slice(0, 16);
 }
 
 function normalizeRoomCode(code) {
@@ -189,6 +252,36 @@ function normalizeForcedHostGoldCount(value) {
     return n;
 }
 
+function isUidOnlineByPresence(room = {}, uid = '', seatOnlineFallback = false) {
+    const key = toSafeString(uid).trim();
+    if (!key) return !!seatOnlineFallback;
+    const presenceEntry = room?.presence?.[key];
+    if (presenceEntry && typeof presenceEntry === 'object' && Object.prototype.hasOwnProperty.call(presenceEntry, 'online')) {
+        return !!presenceEntry.online;
+    }
+    return !!seatOnlineFallback;
+}
+
+function getOnlineHumanHostUidFromRoom(room = {}, excludeUid = '') {
+    const skipUid = toSafeString(excludeUid).trim();
+    const seats = room?.seats || {};
+
+    for (const seatId of SEAT_IDS) {
+        const seat = seats?.[seatId];
+        if (!seat || seat.isBot) continue;
+
+        const uid = toSafeString(seat.uid || seat.reservedUid).trim();
+        if (!uid) continue;
+        if (skipUid && uid === skipUid) continue;
+
+        if (isUidOnlineByPresence(room, uid, seat.online)) {
+            return uid;
+        }
+    }
+
+    return null;
+}
+
 function isHumanHostOnline(room = {}) {
     const hostUid = room?.meta?.hostUid || null;
     if (!hostUid) return false;
@@ -196,10 +289,16 @@ function isHumanHostOnline(room = {}) {
     for (const seatId of SEAT_IDS) {
         const seat = room?.seats?.[seatId];
         if (!seat || seat.isBot) continue;
-        if (seat.uid === hostUid && seat.online) return true;
+        if (seat.uid === hostUid) {
+            return isUidOnlineByPresence(room, hostUid, seat.online);
+        }
     }
 
-    return !!room?.presence?.[hostUid]?.online;
+    return isUidOnlineByPresence(room, hostUid, false);
+}
+
+function findNextWaitingHostUid(room = {}, excludeUid = '') {
+    return getOnlineHumanHostUidFromRoom(room, excludeUid);
 }
 
 function randomRoomCode() {
@@ -209,6 +308,17 @@ function randomRoomCode() {
         code += chars[Math.floor(Math.random() * chars.length)];
     }
     return code;
+}
+
+function normalizeSpectatorUidMap(rawValue) {
+    if (!rawValue || typeof rawValue !== 'object') return {};
+    const next = {};
+    for (const [rawUid, rawFlag] of Object.entries(rawValue)) {
+        const uid = toSafeString(rawUid).trim();
+        if (!uid || rawFlag !== true) continue;
+        next[uid] = true;
+    }
+    return next;
 }
 
 function formatFirebaseErrorContext(context = {}) {
@@ -350,7 +460,7 @@ export async function joinRoom(roomCodeInput, nicknameInput) {
 
     const user = await ensureAnonymousAuth();
     const uid = normalizeUid(user?.uid, 'uid');
-    const nickname = normalizeNickname(nicknameInput);
+    const requestedNickname = normalizeNickname(nicknameInput);
     const bindings = getDatabaseBindings();
     const { get, runTransaction, update, set } = bindings;
     const roomNode = buildRoomRef(bindings, roomCode);
@@ -376,6 +486,11 @@ export async function joinRoom(roomCodeInput, nicknameInput) {
 
     const seats = room.seats || {};
     const status = room.meta?.status || 'waiting';
+    const takenNicknames = collectTakenNicknames(room, uid);
+    const nickname = withRandomThreeDigitSuffix(requestedNickname, takenNicknames);
+    const spectatorUidMap = normalizeSpectatorUidMap(room?.spectatorUids || {});
+    const hasSpectatorSlot = spectatorUidMap[uid] === true;
+    const spectatorCount = Object.keys(spectatorUidMap).filter((rawUid) => rawUid !== uid).length;
     const now = nowTs();
     let assignedSeatId = null;
 
@@ -421,6 +536,12 @@ export async function joinRoom(roomCodeInput, nicknameInput) {
         }
     }
 
+    if (assignedSeatId === null) {
+        if (!hasSpectatorSlot && spectatorCount >= MAX_SPECTATORS) {
+            throw new Error(`观战人数已满（最多 ${MAX_SPECTATORS} 人）。`);
+        }
+    }
+
     try {
         if (assignedSeatId !== null) {
             const seatNode = buildRoomRef(bindings, roomCode, 'seats', assignedSeatId);
@@ -428,7 +549,7 @@ export async function joinRoom(roomCodeInput, nicknameInput) {
             const seatSnap = await get(seatRef);
             const currentSeat = seatSnap.exists() ? seatSnap.val() : null;
 
-            if (currentSeat && currentSeat.reservedUid === uid && !currentSeat.isBot) {
+            if (canWriteOwnedHumanSeat(currentSeat, assignedSeatId, uid)) {
                 await update(seatRef, {
                     nickname,
                     online: true,
@@ -438,18 +559,24 @@ export async function joinRoom(roomCodeInput, nicknameInput) {
             } else if (!currentSeat) {
                 await set(seatRef, buildHumanSeat(assignedSeatId, uid, nickname, true, now));
             }
+            if (room.memberUids?.[uid] !== true) {
+                await set(buildRoomRef(bindings, roomCode, 'memberUids', uid).ref, true);
+            }
+            await set(buildRoomRef(bindings, roomCode, 'spectatorUids', uid).ref, null);
+        } else if (!hasSpectatorSlot) {
+            await set(buildRoomRef(bindings, roomCode, 'spectatorUids', uid).ref, true);
         }
 
-        if (room.memberUids?.[uid] !== true) {
-            await set(buildRoomRef(bindings, roomCode, 'memberUids', uid).ref, true);
-        }
-
-        await set(buildRoomRef(bindings, roomCode, 'presence', uid).ref, {
+        const presencePayload = {
             online: true,
-            seatId: String(assignedSeatId),
             lastSeen: now,
             nickname
-        });
+        };
+        if (assignedSeatId !== null) {
+            presencePayload.seatId = String(assignedSeatId);
+        }
+
+        await set(buildRoomRef(bindings, roomCode, 'presence', uid).ref, presencePayload);
     } catch (error) {
         throw normalizeFirebaseDbError(
             error,
@@ -464,7 +591,8 @@ export async function joinRoom(roomCodeInput, nicknameInput) {
         seatId: assignedSeatId,
         uid,
         nickname,
-        spectator: assignedSeatId === null
+        spectator: assignedSeatId === null,
+        roomStatus: status
     };
 }
 
@@ -506,7 +634,9 @@ export async function switchSeat(roomCodeInput, uid, nicknameInput, targetSeatId
     if ((room?.meta?.status || 'waiting') !== 'waiting') {
         throw new Error('仅 waiting 状态可换座。');
     }
-    if (room?.memberUids?.[sessionUid] !== true) {
+    const isMember = room?.memberUids?.[sessionUid] === true;
+    const isSpectator = room?.spectatorUids?.[sessionUid] === true;
+    if (!isMember && !isSpectator) {
         throw new Error('你不在该房间成员列表中。');
     }
 
@@ -542,6 +672,7 @@ export async function switchSeat(roomCodeInput, uid, nicknameInput, targetSeatId
                 lastSeen: now
             });
             appendPatchEntry(patch, `memberUids/${sessionUid}`, true);
+            appendPatchEntry(patch, `spectatorUids/${sessionUid}`, null);
             appendPatchEntry(patch, `seats/${targetSeatId}/online`, true);
             appendPatchEntry(patch, `seats/${targetSeatId}/control`, 'human');
             appendPatchEntry(patch, `seats/${targetSeatId}/trustee`, false);
@@ -608,6 +739,7 @@ export async function switchSeat(roomCodeInput, uid, nicknameInput, targetSeatId
             lastSeen: now
         });
         appendPatchEntry(patch, `memberUids/${sessionUid}`, true);
+        appendPatchEntry(patch, `spectatorUids/${sessionUid}`, null);
         appendPatchEntry(patch, `seats/${targetSeatId}/online`, true);
         appendPatchEntry(patch, `seats/${targetSeatId}/control`, 'human');
         appendPatchEntry(patch, `seats/${targetSeatId}/trustee`, false);
@@ -644,9 +776,11 @@ export async function attachPresence(roomCodeInput, uid, seatId = null, nickname
     const normalizedSeatId = normalizeOptionalSeatId(seatId);
     const normalizedNickname = normalizeNickname(nickname);
     const bindings = getDatabaseBindings();
-    const { set, update, onDisconnect } = bindings;
+    const { get, set, update, onDisconnect } = bindings;
     const presenceNode = buildRoomRef(bindings, roomCode, 'presence', sessionUid);
     const presenceRef = presenceNode.ref;
+    const spectatorNode = buildRoomRef(bindings, roomCode, 'spectatorUids', sessionUid);
+    const spectatorRef = spectatorNode.ref;
 
     const payload = {
         online: true,
@@ -658,6 +792,14 @@ export async function attachPresence(roomCodeInput, uid, seatId = null, nickname
     }
 
     try {
+        if (normalizedSeatId === null) {
+            await set(spectatorRef, true);
+            const spectatorDisconnectTask = onDisconnect(spectatorRef);
+            await spectatorDisconnectTask.set(null);
+        } else {
+            await set(spectatorRef, null);
+        }
+
         await set(presenceRef, payload);
         const disconnectTask = onDisconnect(presenceRef);
         const disconnectPayload = {
@@ -671,12 +813,17 @@ export async function attachPresence(roomCodeInput, uid, seatId = null, nickname
         await disconnectTask.set(disconnectPayload);
 
         if (normalizedSeatId !== null) {
-            await update(buildRoomRef(bindings, roomCode, 'seats', normalizedSeatId).ref, {
-                online: true,
-                control: 'human',
-                trustee: false,
-                lastSeen: nowTs()
-            });
+            const seatNode = buildRoomRef(bindings, roomCode, 'seats', normalizedSeatId);
+            const seatSnap = await get(seatNode.ref);
+            const currentSeat = seatSnap.exists() ? seatSnap.val() : null;
+            if (canWriteOwnedHumanSeat(currentSeat, normalizedSeatId, sessionUid)) {
+                await update(seatNode.ref, {
+                    online: true,
+                    control: 'human',
+                    trustee: false,
+                    lastSeen: nowTs()
+                });
+            }
         }
     } catch (error) {
         throw normalizeFirebaseDbError(
@@ -689,12 +836,18 @@ export async function attachPresence(roomCodeInput, uid, seatId = null, nickname
 
     return async () => {
         try {
-            await set(presenceRef, {
+            const cleanupPayload = {
                 online: false,
-                seatId: normalizedSeatId,
                 nickname: normalizedNickname,
                 lastSeen: nowTs()
-            });
+            };
+            if (normalizedSeatId !== null) {
+                cleanupPayload.seatId = normalizedSeatId;
+            }
+            await set(presenceRef, cleanupPayload);
+            if (normalizedSeatId === null) {
+                await set(spectatorRef, null);
+            }
         } catch (error) {
             throw normalizeFirebaseDbError(
                 error,
@@ -716,6 +869,8 @@ export async function rebindPresence(roomCodeInput, uid, seatId = null, nickname
     const { set, onDisconnect } = bindings;
     const presenceNode = buildRoomRef(bindings, roomCode, 'presence', sessionUid);
     const presenceRef = presenceNode.ref;
+    const spectatorNode = buildRoomRef(bindings, roomCode, 'spectatorUids', sessionUid);
+    const spectatorRef = spectatorNode.ref;
 
     const payload = {
         online: true,
@@ -736,6 +891,14 @@ export async function rebindPresence(roomCodeInput, uid, seatId = null, nickname
     }
 
     try {
+        if (normalizedSeatId === null) {
+            await set(spectatorRef, true);
+            const spectatorDisconnectTask = onDisconnect(spectatorRef);
+            await spectatorDisconnectTask.set(null);
+        } else {
+            await set(spectatorRef, null);
+        }
+
         await set(presenceRef, payload);
         const disconnectTask = onDisconnect(presenceRef);
         await disconnectTask.set(disconnectPayload);
@@ -841,7 +1004,7 @@ export async function tryElectHost(roomCodeInput, requesterUid = null, roomSnaps
     if (isHumanHostOnline(room)) return { attempted: false, committed: false, reason: 'host-online' };
 
     const currentHostUid = room?.meta?.hostUid || null;
-    const nextHostUid = getOnlineHumanHostUid(room?.seats || {});
+    const nextHostUid = getOnlineHumanHostUidFromRoom(room || {});
     if (!nextHostUid) return { attempted: false, committed: false, reason: 'no-online-human' };
     if (currentHostUid && currentHostUid === nextHostUid) {
         return { attempted: false, committed: false, reason: 'host-unchanged' };
@@ -1046,32 +1209,66 @@ export async function submitActionIntent(roomCodeInput, uid, action) {
     }
 }
 
-export async function leaveRoom(roomCodeInput, uid, seatId = null) {
-    await ensureAnonymousAuth();
+export async function leaveRoom(roomCodeInput, uid, seatId = null, runtimeOptions = {}) {
+    if (runtimeOptions?.skipEnsureAuth !== true) {
+        await ensureAnonymousAuth();
+    }
     const roomCode = normalizeRoomCode(roomCodeInput);
     const sessionUid = normalizeUid(uid, 'uid');
     const normalizedSeatId = normalizeOptionalSeatId(seatId);
-    const bindings = getDatabaseBindings();
-    const { update } = bindings;
+    const bindings = runtimeOptions?.bindings || getDatabaseBindings();
+    const { get, update } = bindings;
     const roomNode = buildRoomRef(bindings, roomCode);
     const roomRef = roomNode.ref;
+    let room = null;
+    try {
+        const snap = await get(roomRef);
+        room = snap.exists() ? snap.val() : null;
+    } catch (error) {
+        throw normalizeFirebaseDbError(
+            error,
+            '离开房间失败',
+            'leaveRoom.readRoom',
+            buildFirebaseContext(bindings, roomNode.path, roomCode)
+        );
+    }
+
+    const now = nowTs();
     const presenceValue = {
         online: false,
-        lastSeen: nowTs()
+        lastSeen: now
     };
     if (normalizedSeatId !== null) {
         presenceValue.seatId = String(normalizedSeatId);
     }
+    const roomStatus = String(room?.meta?.status || 'waiting');
     const updates = [
-        [`presence/${sessionUid}`, presenceValue]
+        [`presence/${sessionUid}`, presenceValue],
+        [`spectatorUids/${sessionUid}`, null]
     ];
 
     if (normalizedSeatId !== null) {
         const seatIdStr = String(normalizedSeatId);
-        updates.push([`seats/${seatIdStr}/online`, false]);
-        updates.push([`seats/${seatIdStr}/control`, 'bot']);
-        updates.push([`seats/${seatIdStr}/trustee`, false]);
-        updates.push([`seats/${seatIdStr}/lastSeen`, nowTs()]);
+        const currentSeat = room?.seats?.[seatIdStr] || null;
+        const canWriteSeat = canWriteOwnedHumanSeat(currentSeat, seatIdStr, sessionUid);
+        if (canWriteSeat && roomStatus === 'waiting') {
+            updates.push([`seats/${seatIdStr}`, buildBotSeat(seatIdStr, now)]);
+        } else if (canWriteSeat) {
+            updates.push([`seats/${seatIdStr}/online`, false]);
+            updates.push([`seats/${seatIdStr}/control`, 'bot']);
+            updates.push([`seats/${seatIdStr}/trustee`, false]);
+            updates.push([`seats/${seatIdStr}/lastSeen`, now]);
+        }
+    }
+
+    const currentHostUid = toSafeString(room?.meta?.hostUid).trim();
+    if (roomStatus === 'waiting' && currentHostUid && currentHostUid === sessionUid) {
+        const nextHostUid = findNextWaitingHostUid(room, sessionUid);
+        if (nextHostUid) {
+            updates.push(['meta/hostUid', nextHostUid]);
+            updates.push(['meta/version', Number(room?.meta?.version || 0) + 1]);
+            updates.push(['meta/updatedAt', now]);
+        }
     }
 
     try {
@@ -1144,7 +1341,6 @@ export async function setSeatControlMode(roomCodeInput, uid, seatIdInput, contro
     appendPatchEntry(patch, `presence/${sessionUid}/online`, true);
     appendPatchEntry(patch, `presence/${sessionUid}/seatId`, String(seatId));
     appendPatchEntry(patch, `presence/${sessionUid}/lastSeen`, now);
-    appendPatchEntry(patch, 'meta/updatedAt', now);
 
     try {
         await update(roomRef, patch);

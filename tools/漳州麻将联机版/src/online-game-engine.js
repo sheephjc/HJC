@@ -136,14 +136,21 @@ function ensureScoreVector(rawScores = []) {
 
 function normalizePendingClaim(pendingClaim) {
     if (!pendingClaim || typeof pendingClaim !== 'object') return null;
+    const optionsBySeat = pendingClaim.optionsBySeat && typeof pendingClaim.optionsBySeat === 'object'
+        ? pendingClaim.optionsBySeat
+        : {};
+    const originSeatId = pendingClaim?.kind === 'QIANG_GANG'
+        ? pendingClaim?.source?.seatId
+        : pendingClaim?.discard?.seatId;
     return {
         ...pendingClaim,
-        optionsBySeat: pendingClaim.optionsBySeat && typeof pendingClaim.optionsBySeat === 'object'
-            ? pendingClaim.optionsBySeat
-            : {},
+        optionsBySeat,
         decisions: pendingClaim.decisions && typeof pendingClaim.decisions === 'object'
             ? pendingClaim.decisions
-            : {}
+            : {},
+        decisionOrder: Array.isArray(pendingClaim.decisionOrder)
+            ? pendingClaim.decisionOrder.map((seatId) => String(seatId))
+            : buildPendingDecisionOrderFromOptions(pendingClaim?.kind || 'DISCARD_CLAIM', originSeatId, optionsBySeat)
     };
 }
 
@@ -907,11 +914,13 @@ function buildQiangGangPending(state, seatNo, tile, actionType, now) {
     }
 
     if (!Object.keys(optionsBySeat).length) return null;
+    const decisionOrder = buildPendingDecisionOrderFromOptions('QIANG_GANG', seatNo, optionsBySeat);
     return {
         kind: 'QIANG_GANG',
         source: { seatId: seatNo, tile, actionType, ts: now },
         optionsBySeat,
         decisions: {},
+        decisionOrder,
         expiresAt: now + CLAIM_TIMEOUT_MS
     };
 }
@@ -1081,12 +1090,14 @@ function buildPendingClaim(state, discardSeatId, discardTile, now) {
     }
 
     if (!Object.keys(optionsBySeat).length) return null;
+    const decisionOrder = buildPendingDecisionOrderFromOptions('DISCARD_CLAIM', discardSeatId, optionsBySeat);
 
     return {
         kind: 'DISCARD_CLAIM',
         discard: { seatId: discardSeatId, tile: discardTile, ts: now },
         optionsBySeat,
         decisions: {},
+        decisionOrder,
         expiresAt: now + CLAIM_TIMEOUT_MS
     };
 }
@@ -1104,6 +1115,27 @@ function removeLastDiscardFromRiver(state, discardSeatId, discardTile) {
 
 function seatDistance(discardSeatId, seatId) {
     return (Number(seatId) - Number(discardSeatId) + 4) % 4;
+}
+
+function buildPendingDecisionOrderFromOptions(kind, originSeatId, optionsBySeat = {}) {
+    const seatIds = Object.keys(optionsBySeat || {});
+    if (!seatIds.length) return [];
+    const origin = Number(originSeatId);
+    const hasOrigin = Number.isInteger(origin) && origin >= 0 && origin <= 3;
+
+    return seatIds.slice().sort((a, b) => {
+        const pa = seatClaimPriority(optionsBySeat?.[a] || null);
+        const pb = seatClaimPriority(optionsBySeat?.[b] || null);
+        if (pa !== pb) return pa - pb;
+
+        if (hasOrigin) {
+            const da = seatDistance(origin, a);
+            const db = seatDistance(origin, b);
+            if (da !== db) return da - db;
+        }
+
+        return Number(a) - Number(b);
+    });
 }
 
 function toChoiceCodes(choice, discardTile, goldTile = null) {
@@ -1130,27 +1162,39 @@ function seatClaimPriority(options = {}) {
     return 9;
 }
 
-function getActivePendingPriority(state, pending) {
-    let active = null;
-    if (!pending?.optionsBySeat || typeof pending.optionsBySeat !== 'object') return active;
+function getPendingDecisionOrder(pending = null) {
+    const persisted = Array.isArray(pending?.decisionOrder)
+        ? pending.decisionOrder.map((seatId) => String(seatId))
+        : [];
+    if (persisted.length) return persisted;
+    const originSeatId = pending?.kind === 'QIANG_GANG'
+        ? pending?.source?.seatId
+        : pending?.discard?.seatId;
+    return buildPendingDecisionOrderFromOptions(pending?.kind || 'DISCARD_CLAIM', originSeatId, pending?.optionsBySeat || {});
+}
+
+function getActivePendingSeatId(state, pending) {
+    if (!pending?.optionsBySeat || typeof pending.optionsBySeat !== 'object') return null;
+    const order = getPendingDecisionOrder(pending);
+    for (const rawSeatId of order) {
+        const seatId = String(rawSeatId || '');
+        if (!seatId || !pending.optionsBySeat?.[seatId]) continue;
+        if (pending.decisions?.[seatId]) continue;
+        return seatId;
+    }
 
     for (const seatId of Object.keys(pending.optionsBySeat)) {
         if (pending.decisions?.[seatId]) continue;
-        const priority = seatClaimPriority(pending.optionsBySeat[seatId]);
-        if (priority >= 9) continue;
-        if (active === null || priority < active) {
-            active = priority;
-        }
+        return seatId;
     }
-    return active;
+    return null;
 }
 
 function isSeatEligibleForPendingDecision(state, pending, seatId) {
     const options = pending?.optionsBySeat?.[seatId];
     if (!options) return false;
-    const activePriority = getActivePendingPriority(state, pending);
-    if (activePriority === null) return true;
-    return seatClaimPriority(options) === activePriority;
+    const activeSeatId = getActivePendingSeatId(state, pending);
+    return !!activeSeatId && String(activeSeatId) === String(seatId);
 }
 
 function normalizeClaimDecision(state, seatId, action) {
@@ -1322,137 +1366,98 @@ function advanceToNextTurnAndDraw(state, discardSeatId, now) {
     }
 }
 
+function buildAutoClaimDecision(option = {}, pendingKind = 'DISCARD_CLAIM') {
+    if (pendingKind === 'QIANG_GANG') {
+        if (option.HU) return { type: 'HU', payload: { huTypes: option.huTypes || [] }, byAction: false };
+        return { type: 'PASS', payload: {}, byAction: false };
+    }
+    if (option.HU) return { type: 'HU', payload: { huTypes: option.huTypes || [] }, byAction: false };
+    if (option.GANG) return { type: 'GANG', payload: {}, byAction: false };
+    if (option.PENG) return { type: 'PENG', payload: {}, byAction: false };
+    if (Array.isArray(option.CHI) && option.CHI.length) {
+        return { type: 'CHI', payload: { choice: option.CHI[0] }, byAction: false };
+    }
+    return { type: 'PASS', payload: {}, byAction: false };
+}
+
 function autoDecideBotClaims(state) {
     if (!state.pendingClaim) return;
-
     const pending = state.pendingClaim;
-    const activePriority = getActivePendingPriority(state, pending);
-    if (activePriority === null) return;
+    const activeSeatId = getActivePendingSeatId(state, pending);
+    if (!activeSeatId) return;
+    if (pending.decisions?.[activeSeatId]) return;
 
-    for (const seatId of Object.keys(pending.optionsBySeat)) {
-        if (pending.decisions[seatId]) continue;
-        const control = state.seatControls?.[seatId] || 'human';
-        if (control !== 'bot') continue;
+    const control = state.seatControls?.[activeSeatId] || 'human';
+    if (control !== 'bot') return;
 
-        const opt = pending.optionsBySeat[seatId];
-        if (seatClaimPriority(opt) !== activePriority) continue;
-        if (opt.HU) {
-            pending.decisions[seatId] = { type: 'HU', payload: { huTypes: opt.huTypes || [] }, byAction: false };
-            continue;
-        }
-        if (opt.GANG) {
-            pending.decisions[seatId] = { type: 'GANG', payload: {}, byAction: false };
-            continue;
-        }
-        if (opt.PENG) {
-            pending.decisions[seatId] = { type: 'PENG', payload: {}, byAction: false };
-            continue;
-        }
-        if (opt.CHI.length) {
-            pending.decisions[seatId] = { type: 'CHI', payload: { choice: opt.CHI[0] }, byAction: false };
-            continue;
-        }
-        pending.decisions[seatId] = { type: 'PASS', payload: {}, byAction: false };
-    }
+    const option = pending.optionsBySeat?.[activeSeatId] || {};
+    pending.decisions[activeSeatId] = buildAutoClaimDecision(option, pending.kind);
 }
 
 function resolvePendingClaimIfReady(state, now, force = false) {
     if (!state.pendingClaim) return false;
-
     const pending = state.pendingClaim;
-    const stagePriorities = [CLAIM_PRIORITY.HU, CLAIM_PRIORITY.PENG, CLAIM_PRIORITY.CHI];
-    let hasAnyStage = false;
 
-    for (const stagePriority of stagePriorities) {
-        const stageSeatIds = Object.keys(pending.optionsBySeat)
-            .filter((seatId) => seatClaimPriority(pending.optionsBySeat[seatId]) === stagePriority);
-        if (!stageSeatIds.length) continue;
-        hasAnyStage = true;
+    while (true) {
+        const activeSeatId = getActivePendingSeatId(state, pending);
+        if (!activeSeatId) break;
 
-        for (const seatId of stageSeatIds) {
-            if (pending.decisions[seatId]) continue;
-            const control = state.seatControls?.[seatId] || 'human';
-            if (control !== 'bot') continue;
-
-            const opt = pending.optionsBySeat[seatId];
-            if (opt.HU) {
-                pending.decisions[seatId] = { type: 'HU', payload: { huTypes: opt.huTypes || [] }, byAction: false };
-                continue;
+        let decision = pending.decisions?.[activeSeatId] || null;
+        if (!decision) {
+            const control = state.seatControls?.[activeSeatId] || 'human';
+            if (control === 'bot') {
+                const option = pending.optionsBySeat?.[activeSeatId] || {};
+                decision = buildAutoClaimDecision(option, pending.kind);
+                pending.decisions[activeSeatId] = decision;
+            } else if (force) {
+                decision = { type: 'PASS', payload: {}, byAction: false };
+                pending.decisions[activeSeatId] = decision;
+            } else {
+                return false;
             }
-            if (opt.GANG) {
-                pending.decisions[seatId] = { type: 'GANG', payload: {}, byAction: false };
-                continue;
-            }
-            if (opt.PENG) {
-                pending.decisions[seatId] = { type: 'PENG', payload: {}, byAction: false };
-                continue;
-            }
-            if (opt.CHI.length) {
-                pending.decisions[seatId] = { type: 'CHI', payload: { choice: opt.CHI[0] }, byAction: false };
-                continue;
-            }
-            pending.decisions[seatId] = { type: 'PASS', payload: {}, byAction: false };
         }
 
-        const waitingHumanSeats = stageSeatIds.filter((seatId) => {
-            const control = state.seatControls?.[seatId] || 'human';
-            if (control === 'bot') return false;
-            return !pending.decisions?.[seatId];
-        });
-
-        if (waitingHumanSeats.length && !force) {
-            return false;
-        }
-        if (waitingHumanSeats.length && force) {
-            waitingHumanSeats.forEach((seatId) => {
-                pending.decisions[seatId] = { type: 'PASS', payload: {}, byAction: false };
-            });
-        }
-
-        const stageClaims = stageSeatIds
-            .map((seatId) => {
-                const decision = pending.decisions?.[seatId];
-                if (!decision || decision.type === 'PASS') return null;
-                return {
-                    seatId: Number(seatId),
-                    ...decision
-                };
-            })
-            .filter(Boolean);
-
-        if (stageClaims.length) {
-            stageClaims.sort((a, b) => {
-                const pa = CLAIM_PRIORITY[a.type] ?? 9;
-                const pb = CLAIM_PRIORITY[b.type] ?? 9;
-                if (pa !== pb) return pa - pb;
-                const originSeat = pending.kind === 'QIANG_GANG'
-                    ? Number(pending.source?.seatId)
-                    : Number(pending.discard?.seatId);
-                return seatDistance(originSeat, a.seatId) - seatDistance(originSeat, b.seatId);
-            });
-            if (!stageClaims[0]?.byAction) {
+        if (decision.type !== 'PASS') {
+            const selectedClaim = {
+                seatId: Number(activeSeatId),
+                ...decision
+            };
+            if (!selectedClaim.byAction) {
                 markAction(state, {
-                    type: stageClaims[0].type,
-                    seatId: stageClaims[0].seatId,
-                    payload: stageClaims[0].payload || {},
+                    type: selectedClaim.type,
+                    seatId: selectedClaim.seatId,
+                    payload: selectedClaim.payload || {},
                     ts: now
                 }, now);
             }
-            applyClaimWin(state, stageClaims[0], now);
+            applyClaimWin(state, selectedClaim, now);
             return true;
         }
     }
 
-    if (!hasAnyStage) {
-        if (pending.kind === 'QIANG_GANG') {
-            applyPendingGangCommit(state, now);
-            state.pendingClaim = null;
-            return true;
+    const decidedClaims = getPendingDecisionOrder(pending)
+        .map((rawSeatId) => {
+            const seatId = String(rawSeatId || '');
+            if (!seatId) return null;
+            const decision = pending.decisions?.[seatId];
+            if (!decision || decision.type === 'PASS') return null;
+            return {
+                seatId: Number(seatId),
+                ...decision
+            };
+        })
+        .filter(Boolean);
+    if (decidedClaims.length) {
+        const selectedClaim = decidedClaims[0];
+        if (!selectedClaim.byAction) {
+            markAction(state, {
+                type: selectedClaim.type,
+                seatId: selectedClaim.seatId,
+                payload: selectedClaim.payload || {},
+                ts: now
+            }, now);
         }
-
-        const discardSeatId = pending.discard.seatId;
-        state.pendingClaim = null;
-        advanceToNextTurnAndDraw(state, discardSeatId, now);
+        applyClaimWin(state, selectedClaim, now);
         return true;
     }
 
@@ -1547,6 +1552,13 @@ function applyReactionAction(state, action, now) {
 
     state.pendingClaim.decisions[seatId] = decision;
     markAction(state, action, now);
+    if (decision.type !== 'PASS') {
+        applyClaimWin(state, {
+            seatId: Number(seatId),
+            ...decision
+        }, now);
+        return state;
+    }
     resolvePendingClaimIfReady(state, now, false);
     return state;
 }
@@ -1805,12 +1817,16 @@ export function runBotTurns(gameState, seats = {}, now = Date.now(), maxSteps = 
 
         if (state.pendingClaim) {
             autoDecideBotClaims(state);
+            const pending = state.pendingClaim;
+            const hasUndecidedSeat = !!getActivePendingSeatId(state, pending);
             const claimReadyAt = Number(state.botClaimReadyAt || 0);
             if (!claimReadyAt) {
-                const claimDelay = getBotClaimDelayMs(state);
-                if (claimDelay > 0) {
-                    state.botClaimReadyAt = tick + claimDelay;
-                    break;
+                if (hasUndecidedSeat) {
+                    const claimDelay = getBotClaimDelayMs(state);
+                    if (claimDelay > 0) {
+                        state.botClaimReadyAt = tick + claimDelay;
+                        break;
+                    }
                 }
                 state.botClaimReadyAt = tick;
             }

@@ -6,7 +6,8 @@ import {
     rebindPresence,
     startRoomGame,
     subscribeRoom,
-    switchSeat
+    switchSeat,
+    tryElectHost
 } from './room-service.js';
 import { ensureAnonymousAuth, getFirebaseConfigStatus, hasFirebaseConfig } from './firebase-client.js';
 import { clearSession, loadSession, saveSession } from './session.js';
@@ -369,6 +370,14 @@ async function subscribeWaitingRoom() {
             }
         }
 
+        if ((roomState?.meta?.status || 'waiting') === 'waiting' && session?.uid) {
+            try {
+                await tryElectHost(roomCode, session.uid, roomState);
+            } catch {
+                // 房主迁移失败时不阻断等待房间渲染
+            }
+        }
+
         renderWaitingRoom();
         const status = roomState?.meta?.status || 'waiting';
         if (status === 'playing') {
@@ -433,10 +442,27 @@ async function handleJoinRoomBattle() {
     setStatus(`加入实战房间 ${inputRoomCode} 中...`);
     try {
         const nextSession = await joinRoom(inputRoomCode, nickname);
+        const roomStatus = String(nextSession?.roomStatus || 'waiting');
+        const renamedHint = nextSession.nickname !== nickname ? `（昵称已调整为 ${nextSession.nickname}）` : '';
+
+        if (roomStatus === 'playing') {
+            if (nextSession.spectator) {
+                setStatus(`牌局进行中，已作为观战进入实战页。${renamedHint}`);
+            } else {
+                setStatus(`已重新加入对局：${seatNameAbsolute(nextSession.seatId)}位${renamedHint}`);
+            }
+            gotoRoomPage({
+                ...nextSession,
+                roomCode: inputRoomCode,
+                entryMode: 'battle'
+            }, 'battle');
+            return;
+        }
+
         if (nextSession.spectator) {
-            setStatus('房间已满，已作为观战进入等待页。');
+            setStatus(`房间已满，已作为观战进入等待页。${renamedHint}`);
         } else {
-            setStatus(`加入成功：${seatNameAbsolute(nextSession.seatId)}位`);
+            setStatus(`加入成功：${seatNameAbsolute(nextSession.seatId)}位${renamedHint}`);
         }
         await enterWaitingRoom(nextSession);
     } catch (error) {
@@ -486,10 +512,11 @@ async function handleJoinRoomDebug() {
     setStatus(`加入调试房间 ${inputRoomCode} 中...`);
     try {
         const nextSession = await joinRoom(inputRoomCode, nickname);
+        const renamedHint = nextSession.nickname !== nickname ? `（昵称已调整为 ${nextSession.nickname}）` : '';
         if (nextSession.spectator) {
-            setStatus('房间已满，已作为观战进入调试页。');
+            setStatus(`房间已满，已作为观战进入调试页。${renamedHint}`);
         } else {
-            setStatus(`加入成功：${seatNameAbsolute(nextSession.seatId)}位`);
+            setStatus(`加入成功：${seatNameAbsolute(nextSession.seatId)}位${renamedHint}`);
         }
         gotoRoomPage({ ...nextSession, entryMode: 'debug' }, 'debug');
     } catch (error) {
@@ -548,8 +575,10 @@ async function handleCopyBattleRoomCode() {
     try {
         await navigator.clipboard.writeText(roomCode);
         setStatus(`已复制房间码：${roomCode}`);
+        showActionToast('复制成功');
     } catch {
         setStatus('复制失败，请检查浏览器剪贴板权限。', true);
+        showActionToast('复制失败，请检查剪贴板权限', { isError: true });
     }
 }
 

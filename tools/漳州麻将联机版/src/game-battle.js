@@ -21,7 +21,7 @@ import { showActionToast } from './ui-toast.js';
 // 已提牌，再次点击同一张牌打出
 // 复制失败，请检查浏览器剪贴板权限
 
-const BUILD_TAG = '20260321r45';
+const BUILD_TAG = '20260324r46';
 const HOST_LOOP_IDLE_INTERVAL_MS = 650;
 const HOST_LOOP_ACTIVE_INTERVAL_MS = 100;
 const HOST_LOOP_BURST_WINDOW_MS = 2800;
@@ -30,12 +30,6 @@ const REPLACEMENT_DRAW_DELAY_MS = 100;
 const REPLACEMENT_DRAW_REASONS = new Set(['GANG', 'GANG_FLOWER', 'FLOWER']);
 const FLOWER_DRAW_REASONS = new Set(['FLOWER', 'GANG_FLOWER']);
 const WHITE_DRAGON_TILE_CODE = 'Z7';
-const CLAIM_PRIORITY = Object.freeze({
-    HU: 0,
-    PENG: 1,
-    GANG: 1,
-    CHI: 2
-});
 const WATER_NUM_CN = Object.freeze(['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十']);
 const SPECIAL_MULTIPLIER_MAP = Object.freeze({
     '游金': 2,
@@ -433,32 +427,66 @@ function actionTypeLabel(type = '') {
 
 function pendingOptionPriority(options = {}) {
     if (!options || typeof options !== 'object') return 9;
-    if (options.HU) return CLAIM_PRIORITY.HU;
-    if (options.PENG || options.GANG) return CLAIM_PRIORITY.PENG;
-    if (Array.isArray(options.CHI) && options.CHI.length) return CLAIM_PRIORITY.CHI;
+    if (options.HU) return 0;
+    if (options.PENG || options.GANG) return 1;
+    if (Array.isArray(options.CHI) && options.CHI.length) return 2;
     return 9;
 }
 
-function getActivePendingPriority(pending = null) {
-    if (!pending?.optionsBySeat || typeof pending.optionsBySeat !== 'object') return null;
-    let active = null;
-    for (const [seatId, options] of Object.entries(pending.optionsBySeat)) {
-        if (pending?.decisions?.[seatId]) continue;
-        const priority = pendingOptionPriority(options);
-        if (priority >= 9) continue;
-        if (active === null || priority < active) {
-            active = priority;
-        }
+function getPendingDecisionOriginSeat(pending = null) {
+    if (!pending || typeof pending !== 'object') return null;
+    if (pending.kind === 'QIANG_GANG') {
+        return normalizeSeatNo(pending?.source?.seatId, null);
     }
-    return active;
+    return normalizeSeatNo(pending?.discard?.seatId, null);
+}
+
+function buildPendingDecisionOrder(pending = null) {
+    if (!pending?.optionsBySeat || typeof pending.optionsBySeat !== 'object') return [];
+    const originSeat = getPendingDecisionOriginSeat(pending);
+    const seatIds = Object.keys(pending.optionsBySeat);
+    return seatIds.slice().sort((a, b) => {
+        const pa = pendingOptionPriority(pending.optionsBySeat?.[a] || null);
+        const pb = pendingOptionPriority(pending.optionsBySeat?.[b] || null);
+        if (pa !== pb) return pa - pb;
+
+        if (originSeat !== null) {
+            const da = (Number(a) - Number(originSeat) + 4) % 4;
+            const db = (Number(b) - Number(originSeat) + 4) % 4;
+            if (da !== db) return da - db;
+        }
+        return Number(a) - Number(b);
+    });
+}
+
+function getPendingDecisionOrder(pending = null) {
+    const persisted = Array.isArray(pending?.decisionOrder)
+        ? pending.decisionOrder.map((seatId) => String(seatId))
+        : [];
+    return persisted.length ? persisted : buildPendingDecisionOrder(pending);
+}
+
+function getActivePendingSeatId(pending = null) {
+    if (!pending?.optionsBySeat || typeof pending.optionsBySeat !== 'object') return null;
+    const order = getPendingDecisionOrder(pending);
+    for (const rawSeatId of order) {
+        const seatId = String(rawSeatId || '');
+        if (!seatId || !pending.optionsBySeat?.[seatId]) continue;
+        if (pending?.decisions?.[seatId]) continue;
+        return seatId;
+    }
+    for (const seatId of Object.keys(pending.optionsBySeat)) {
+        if (pending?.decisions?.[seatId]) continue;
+        return seatId;
+    }
+    return null;
 }
 
 function isSeatActivePendingDecision(pending = null, seatId = '') {
     const seatKey = String(seatId || '');
     if (!seatKey || !pending?.optionsBySeat?.[seatKey]) return false;
-    const activePriority = getActivePendingPriority(pending);
-    if (activePriority === null) return true;
-    return pendingOptionPriority(pending.optionsBySeat[seatKey]) === activePriority;
+    const activeSeatId = getActivePendingSeatId(pending);
+    return !!activeSeatId && seatKey === activeSeatId;
 }
 
 function formatActionPayloadText(type, payload = {}) {
@@ -582,6 +610,10 @@ function selfHuPromptKey(gameState = getGameState(), seatId = getSelfSeatNo()) {
 function getSelfSeatNo() {
     if (session?.seatId === null || session?.seatId === undefined) return null;
     return normalizeSeatNo(session.seatId, 0);
+}
+
+function isSpectatorMode() {
+    return getSelfSeatNo() === null;
 }
 
 function getDealerSeatNo(gameState = getGameState()) {
@@ -842,7 +874,8 @@ function renderTableOutcomeEffects() {
 
 function renderRoomMeta() {
     if (!roomMetaEl || !session || !roomState) return;
-    const role = isHost() ? '房主' : '成员';
+    const spectator = session.seatId === null || session.seatId === undefined;
+    const role = spectator ? '观战' : (isHost() ? '房主' : '成员');
     const seatText = session.seatId === null || session.seatId === undefined
         ? '观战'
         : `${seatNameAbsolute(session.seatId)}位`;
@@ -981,7 +1014,7 @@ function renderSeatArea(pos, seatId, gameState, canDiscard, delayReplacementDraw
     const currentDraw = gameState?.phase === 'playing' ? gameState.currentDraw : null;
     const lastDiscard = gameState?.phase === 'playing' ? gameState.lastDiscard : null;
     const outcome = gameState?.phase === 'ended' ? (gameState?.outcome || null) : null;
-    const revealHand = pos === 'bottom' || gameState?.phase === 'ended';
+    const revealHand = pos === 'bottom' || gameState?.phase === 'ended' || (isSpectatorMode() && gameState?.phase === 'playing');
     const drawHighlightIndex = currentDraw && Number(currentDraw.seatId) === Number(seatId)
         ? findLastTileIndex(hand, currentDraw.tile)
         : -1;
@@ -2128,7 +2161,11 @@ function kickHostLoopSoon() {
 
 async function submitIntent(type, payload = {}, options = {}) {
     if (!roomState || !session) return false;
-    const seatId = session.seatId === null || session.seatId === undefined ? 0 : Number(session.seatId);
+    const seatId = getSelfSeatNo();
+    if (seatId === null) {
+        setStatus('观战状态不可操作', true);
+        return false;
+    }
     const action = createAction({
         type,
         seatId,
@@ -2153,6 +2190,7 @@ async function handleHandClick(event) {
     if (event?.isTrusted) {
         primeActionVoiceEngine(true);
     }
+    if (isSpectatorMode()) return;
     const tile = event.target.closest('[data-discard-index]');
     if (!tile) return;
 

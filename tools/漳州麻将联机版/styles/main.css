@@ -848,8 +848,10 @@ input, select {
 
 .guestbook-panel {
     width: min(620px, 96vw);
+    height: min(88vh, calc(var(--app-height, 100vh) - 20px));
     max-height: min(88vh, calc(var(--app-height, 100vh) - 20px));
     display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     gap: 10px;
     overflow: hidden;
 }
@@ -876,9 +878,11 @@ input, select {
 }
 
 .guestbook-list {
-    min-height: 170px;
-    max-height: min(44vh, 360px);
-    overflow: auto;
+    min-height: 0;
+    height: 100%;
+    max-height: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     border: 1px solid #d1d5db;
     border-radius: 10px;
     background: #f8fafc;
@@ -1063,12 +1067,13 @@ input, select {
 
     .guestbook-panel {
         width: min(680px, 98vw);
+        height: min(90vh, calc(var(--app-height, 100vh) - 8px));
         max-height: min(90vh, calc(var(--app-height, 100vh) - 8px));
         padding: 12px;
         gap: 8px;
     }
 
     .guestbook-list {
-        max-height: min(46vh, 360px);
+        max-height: none;
     }
 }

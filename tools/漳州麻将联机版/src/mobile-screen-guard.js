@@ -17,7 +17,7 @@ function isPortraitNow() {
 function isPhoneLikeViewport() {
     const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
     const shortestEdge = Math.min(window.innerWidth || 0, window.innerHeight || 0);
-    return coarse || shortestEdge <= 900;
+    return coarse && shortestEdge <= 900;
 }
 
 function getViewportHeight() {
