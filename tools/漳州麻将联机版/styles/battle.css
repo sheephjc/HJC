@@ -610,19 +610,32 @@
     font-size: 40px;
     font-weight: 900;
     color: gold;
-    text-shadow: 0 0 15px orange, 2px 2px 0 black;
+    text-shadow:
+        0 0 8px rgba(255, 229, 127, 0.75),
+        0 0 18px rgba(255, 174, 0, 0.68),
+        0 0 30px rgba(255, 140, 0, 0.52);
+    -webkit-text-stroke: 1px rgba(26, 17, 5, 0.62);
+    paint-order: stroke fill;
     pointer-events: none;
     animation: resultPop 0.6s ease-out;
     z-index: 3;
     white-space: nowrap;
     max-width: 92%;
-    overflow: hidden;
-    text-overflow: clip;
+    overflow: visible;
+    text-overflow: unset;
+}
+
+#p-bottom .result-text {
+    z-index: 120;
 }
 
 .lose-text {
-    color: red;
-    text-shadow: 0 0 15px darkred, 2px 2px 0 black;
+    color: #ff4a4a;
+    text-shadow:
+        0 0 8px rgba(255, 114, 114, 0.74),
+        0 0 18px rgba(239, 68, 68, 0.66),
+        0 0 30px rgba(153, 27, 27, 0.56);
+    -webkit-text-stroke: 1px rgba(40, 5, 5, 0.7);
 }
 
 @keyframes resultPop {
@@ -896,6 +909,12 @@ color:#ffffff;
 overflow:hidden;
 text-overflow:ellipsis;
 white-space:nowrap;
+}
+
+.settle-name-self{
+color:#ffe066;
+font-weight:800;
+text-shadow:0 0 6px rgba(251, 191, 36, 0.42);
 }
 
 .settle-score{

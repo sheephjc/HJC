@@ -1398,57 +1398,37 @@ function resolvePendingClaimIfReady(state, now, force = false) {
     if (!state.pendingClaim) return false;
     const pending = state.pendingClaim;
 
-    while (true) {
-        const activeSeatId = getActivePendingSeatId(state, pending);
-        if (!activeSeatId) break;
+    const orderedSeatIds = getPendingDecisionOrder(pending);
+    const fallbackSeatIds = Object.keys(pending.optionsBySeat || {})
+        .map((seatId) => String(seatId))
+        .filter((seatId) => !orderedSeatIds.includes(seatId));
+    const seatOrder = [...orderedSeatIds, ...fallbackSeatIds];
 
-        let decision = pending.decisions?.[activeSeatId] || null;
+    for (const rawSeatId of seatOrder) {
+        const seatId = String(rawSeatId || '');
+        if (!seatId || !pending.optionsBySeat?.[seatId]) continue;
+
+        let decision = pending.decisions?.[seatId] || null;
         if (!decision) {
-            const control = state.seatControls?.[activeSeatId] || 'human';
+            const control = state.seatControls?.[seatId] || 'human';
             if (control === 'bot') {
-                const option = pending.optionsBySeat?.[activeSeatId] || {};
+                const option = pending.optionsBySeat?.[seatId] || {};
                 decision = buildAutoClaimDecision(option, pending.kind);
-                pending.decisions[activeSeatId] = decision;
+                pending.decisions[seatId] = decision;
             } else if (force) {
                 decision = { type: 'PASS', payload: {}, byAction: false };
-                pending.decisions[activeSeatId] = decision;
+                pending.decisions[seatId] = decision;
             } else {
                 return false;
             }
         }
 
-        if (decision.type !== 'PASS') {
-            const selectedClaim = {
-                seatId: Number(activeSeatId),
-                ...decision
-            };
-            if (!selectedClaim.byAction) {
-                markAction(state, {
-                    type: selectedClaim.type,
-                    seatId: selectedClaim.seatId,
-                    payload: selectedClaim.payload || {},
-                    ts: now
-                }, now);
-            }
-            applyClaimWin(state, selectedClaim, now);
-            return true;
-        }
-    }
+        if (decision.type === 'PASS') continue;
 
-    const decidedClaims = getPendingDecisionOrder(pending)
-        .map((rawSeatId) => {
-            const seatId = String(rawSeatId || '');
-            if (!seatId) return null;
-            const decision = pending.decisions?.[seatId];
-            if (!decision || decision.type === 'PASS') return null;
-            return {
-                seatId: Number(seatId),
-                ...decision
-            };
-        })
-        .filter(Boolean);
-    if (decidedClaims.length) {
-        const selectedClaim = decidedClaims[0];
+        const selectedClaim = {
+            seatId: Number(seatId),
+            ...decision
+        };
         if (!selectedClaim.byAction) {
             markAction(state, {
                 type: selectedClaim.type,

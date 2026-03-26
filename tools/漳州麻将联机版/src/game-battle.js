@@ -27,6 +27,7 @@ const HOST_LOOP_ACTIVE_INTERVAL_MS = 100;
 const HOST_LOOP_BURST_WINDOW_MS = 2800;
 const GOLD_REVEAL_FX_DURATION_MS = 1880;
 const REPLACEMENT_DRAW_DELAY_MS = 100;
+const REACTION_BAR_STABLE_DELAY_MS = 160;
 const REPLACEMENT_DRAW_REASONS = new Set(['GANG', 'GANG_FLOWER', 'FLOWER']);
 const FLOWER_DRAW_REASONS = new Set(['FLOWER', 'GANG_FLOWER']);
 const WHITE_DRAGON_TILE_CODE = 'Z7';
@@ -148,6 +149,9 @@ let lastGoldRevealEffectKey = '';
 let replacementDrawRevealTimer = null;
 let flowerCueTimer = null;
 let goldRevealFxTimer = null;
+let reactionBarStableTimer = null;
+let reactionBarStableKey = '';
+let reactionBarStableReadyAt = 0;
 let skippedSelfHuPromptKey = '';
 
 function ensureAudioDiagnosticPanel() {
@@ -487,6 +491,144 @@ function isSeatActivePendingDecision(pending = null, seatId = '') {
     if (!seatKey || !pending?.optionsBySeat?.[seatKey]) return false;
     const activeSeatId = getActivePendingSeatId(pending);
     return !!activeSeatId && seatKey === activeSeatId;
+}
+
+const CLAIM_REACTION_ACTION_TYPES = new Set(['CHI', 'PENG', 'GANG', 'HU', 'PASS']);
+
+function clearReactionBarStableTimer() {
+    if (!reactionBarStableTimer) return;
+    clearTimeout(reactionBarStableTimer);
+    reactionBarStableTimer = null;
+}
+
+function resetReactionBarStableGate() {
+    clearReactionBarStableTimer();
+    reactionBarStableKey = '';
+    reactionBarStableReadyAt = 0;
+}
+
+function buildReactionOptionsStableKey(options = null) {
+    if (!options || typeof options !== 'object') return '';
+
+    const parts = [];
+    if (options.HU) parts.push('HU');
+    if (options.PENG) parts.push('PENG');
+    if (options.GANG) parts.push('GANG');
+
+    const chiChoices = Array.isArray(options.CHI) ? options.CHI : [];
+    if (chiChoices.length) {
+        const chiKey = chiChoices
+            .map((choice) => Array.isArray(choice)
+                ? choice.map((tile) => String(tile || '')).join(',')
+                : '')
+            .join('|');
+        parts.push(`CHI:${chiKey}`);
+    }
+
+    return parts.join(';');
+}
+
+function buildReactionBarStableKey(pending = null, seatId = '') {
+    if (!pending || typeof pending !== 'object') return '';
+
+    const seatKey = String(seatId || '');
+    if (!seatKey) return '';
+
+    const options = pending?.optionsBySeat?.[seatKey];
+    if (!options || !isSeatActivePendingDecision(pending, seatKey)) return '';
+
+    const optionsKey = buildReactionOptionsStableKey(options);
+    if (!optionsKey) return '';
+
+    const orderKey = getPendingDecisionOrder(pending)
+        .map((rawSeatId) => String(rawSeatId || ''))
+        .join(',');
+    const activeSeatId = String(getActivePendingSeatId(pending) || '');
+    const discardSeatId = String(normalizeSeatNo(pending?.discard?.seatId, '') ?? '');
+    const discardTile = String(pending?.discard?.tile || '');
+    const discardTs = Number.isFinite(Number(pending?.discard?.ts))
+        ? Math.floor(Number(pending.discard.ts))
+        : 0;
+    const openedBySeatId = String(normalizeSeatNo(pending?.openedBy, '') ?? '');
+
+    return [
+        seatKey,
+        orderKey,
+        activeSeatId,
+        discardSeatId,
+        discardTile,
+        discardTs,
+        openedBySeatId,
+        optionsKey
+    ].join('|');
+}
+
+function shouldHoldReactionBarUntilStable(stableKey = '') {
+    if (!stableKey) {
+        resetReactionBarStableGate();
+        return false;
+    }
+
+    const now = Date.now();
+    if (reactionBarStableKey !== stableKey) {
+        reactionBarStableKey = stableKey;
+        reactionBarStableReadyAt = now + REACTION_BAR_STABLE_DELAY_MS;
+        clearReactionBarStableTimer();
+    }
+
+    if (now >= reactionBarStableReadyAt) {
+        clearReactionBarStableTimer();
+        return false;
+    }
+
+    if (!reactionBarStableTimer) {
+        const delay = Math.max(16, reactionBarStableReadyAt - now);
+        reactionBarStableTimer = setTimeout(() => {
+            reactionBarStableTimer = null;
+            renderActionBar();
+        }, delay);
+    }
+
+    return true;
+}
+
+function shouldLockReactionBar(actions = {}, pending = null, seatId = '') {
+    if (!pending || typeof pending !== 'object') return false;
+    const selfSeatId = String(seatId || '');
+    if (!selfSeatId || !pending?.optionsBySeat?.[selfSeatId]) return false;
+
+    const order = getPendingDecisionOrder(pending);
+    if (!order.length) return false;
+    const selfIndex = order.findIndex((rawSeatId) => String(rawSeatId || '') === selfSeatId);
+    if (selfIndex <= 0) return false;
+
+    const higherPrioritySeats = new Set(
+        order
+            .slice(0, selfIndex)
+            .map((rawSeatId) => String(rawSeatId || ''))
+            .filter((seatKey) => !!seatKey && !!pending?.optionsBySeat?.[seatKey])
+    );
+    if (!higherPrioritySeats.size) return false;
+
+    const actionMap = actions && typeof actions === 'object' ? actions : {};
+    for (const entry of Object.values(actionMap)) {
+        if (!entry || typeof entry !== 'object') continue;
+        if (entry.status !== 'pending') continue;
+
+        const action = entry.action;
+        if (!action || typeof action !== 'object') continue;
+
+        const actionType = String(action.type || '').toUpperCase();
+        if (!CLAIM_REACTION_ACTION_TYPES.has(actionType)) continue;
+
+        const actionSeatNo = normalizeSeatNo(action.seatId, null);
+        if (actionSeatNo === null) continue;
+        const actionSeatId = String(actionSeatNo);
+        if (!higherPrioritySeats.has(actionSeatId)) continue;
+
+        return true;
+    }
+    return false;
 }
 
 function formatActionPayloadText(type, payload = {}) {
@@ -856,7 +998,7 @@ function renderTableOutcomeEffects() {
         text.textContent = outcomeWinnerTableText(outcome);
         applyOutcomeTextEffectClasses(text, outcome);
         winnerArea.appendChild(text);
-        fitTextToSingleLine(text, { minPx: 12, widthRatio: 0.9, container: winnerArea });
+        fitTextToSingleLine(text, { minPx: 12, widthRatio: 0.9, container: winnerArea, clipOverflow: false });
     }
 
     if (!outcome.isSelfDraw && Number.isInteger(Number(outcome.loser))) {
@@ -868,6 +1010,7 @@ function renderTableOutcomeEffects() {
             text.className = 'result-text lose-text';
             text.textContent = '点炮 👎🏻';
             loserArea.appendChild(text);
+            fitTextToSingleLine(text, { minPx: 12, widthRatio: 0.9, container: loserArea, clipOverflow: false });
         }
     }
 }
@@ -1815,6 +1958,7 @@ function renderActionBar() {
     actionBarEl.classList.remove('chi-three-mobile');
     const gameState = getGameState();
     if (!gameState || !session || session.seatId === null || session.seatId === undefined) {
+        resetReactionBarStableGate();
         chiSubMenuOpen = false;
         actionBarEl.innerHTML = '';
         actionBarEl.classList.add('hidden');
@@ -1824,6 +1968,7 @@ function renderActionBar() {
     const seatId = String(session.seatId);
     const control = gameState?.seatControls?.[seatId] || 'human';
     if (control === 'bot') {
+        resetReactionBarStableGate();
         chiSubMenuOpen = false;
         actionBarEl.innerHTML = '';
         actionBarEl.classList.add('hidden');
@@ -1831,6 +1976,7 @@ function renderActionBar() {
     }
 
     if (!isGoldRevealed(gameState)) {
+        resetReactionBarStableGate();
         chiSubMenuOpen = false;
         actionBarEl.innerHTML = '';
         actionBarEl.classList.add('hidden');
@@ -1841,14 +1987,33 @@ function renderActionBar() {
     const controls = [];
 
     if (pending) {
+        if (shouldLockReactionBar(roomState?.actions || {}, pending, seatId)) {
+            resetReactionBarStableGate();
+            chiSubMenuOpen = false;
+            actionBarEl.innerHTML = '';
+            actionBarEl.classList.add('hidden');
+            return;
+        }
+
         const options = pending.optionsBySeat?.[seatId];
         if (!options) {
+            resetReactionBarStableGate();
             chiSubMenuOpen = false;
             actionBarEl.innerHTML = '';
             actionBarEl.classList.add('hidden');
             return;
         }
         if (!isSeatActivePendingDecision(pending, seatId)) {
+            resetReactionBarStableGate();
+            chiSubMenuOpen = false;
+            actionBarEl.innerHTML = '';
+            actionBarEl.classList.add('hidden');
+            return;
+        }
+        const stableKey = buildReactionBarStableKey(pending, seatId);
+        if (!stableKey) {
+            resetReactionBarStableGate();
+        } else if (shouldHoldReactionBarUntilStable(stableKey)) {
             chiSubMenuOpen = false;
             actionBarEl.innerHTML = '';
             actionBarEl.classList.add('hidden');
@@ -1873,6 +2038,7 @@ function renderActionBar() {
             controls.push(buildActionButton('过', { 'data-reaction-type': 'PASS' }));
         }
     } else if (gameState.phase === 'playing' && gameState.turnSeat === Number(seatId)) {
+        resetReactionBarStableGate();
         chiSubMenuOpen = false;
         const hand = gameState.hands?.[seatId] || [];
         const goldTile = gameState.goldTile;
@@ -1917,6 +2083,8 @@ function renderActionBar() {
                 controls.push(buildActionButton('过', { 'data-turn-pass-hu': '1' }));
             }
         }
+    } else {
+        resetReactionBarStableGate();
     }
 
     actionBarEl.innerHTML = controls.join('');
@@ -2117,6 +2285,7 @@ function renderOutcome() {
 
     if (settlePanelEl) {
         const totalScores = Array.isArray(gameState?.scores) ? gameState.scores : [0, 0, 0, 0];
+        const selfSeatNo = normalizeSeatNo(session?.seatId, null);
         const lines = [0, 1, 2, 3].map((seatId) => {
             const value = Number(payout[seatId] || 0);
             const totalScore = Math.floor(Number(totalScores[seatId] || 0));
@@ -2124,7 +2293,9 @@ function renderOutcome() {
             const sign = value >= 0 ? '+' : '';
             const totalSign = totalScore >= 0 ? '+' : '';
             const seatLabel = escapeHtml(getSettlementSeatLabel(seatId));
-            return `<div class="settle-row"><span class="settle-name">${seatLabel}</span><span class="settle-score ${className}">${sign}${value}</span><span class="settle-total">${totalSign}${totalScore}</span></div>`;
+            const isSelfRow = selfSeatNo !== null && Number(selfSeatNo) === Number(seatId);
+            const nameClass = isSelfRow ? 'settle-name settle-name-self' : 'settle-name';
+            return `<div class="settle-row"><span class="${nameClass}">${seatLabel}</span><span class="settle-score ${className}">${sign}${value}</span><span class="settle-total">${totalSign}${totalScore}</span></div>`;
         }).join('');
 
         settlePanelEl.innerHTML = `<div class="settle-title">四家分数结算</div><div class="settle-head"><span class="settle-name"></span><span class="settle-head-cell">本局得失</span><span class="settle-head-cell">总分</span></div>${lines}<div class="settle-tip">点击屏幕可关闭</div>`;
@@ -2266,9 +2437,28 @@ async function handleActionBarClick(event) {
     if (event?.isTrusted) {
         primeActionVoiceEngine(true);
     }
-    if (getGameState()?.goldRevealed === false) {
+    const gameState = getGameState();
+    if (gameState?.goldRevealed === false) {
         setStatus('等待庄家开金后再操作', true);
         return;
+    }
+
+    const pending = gameState?.pendingClaim || null;
+    const selfSeatId = session?.seatId === null || session?.seatId === undefined ? '' : String(session.seatId);
+    if (pending && selfSeatId && shouldLockReactionBar(roomState?.actions || {}, pending, selfSeatId)) {
+        chiSubMenuOpen = false;
+        renderActionBar();
+        return;
+    }
+    if (pending && selfSeatId) {
+        const stableKey = buildReactionBarStableKey(pending, selfSeatId);
+        if (!stableKey) {
+            resetReactionBarStableGate();
+        } else if (shouldHoldReactionBarUntilStable(stableKey)) {
+            chiSubMenuOpen = false;
+            renderActionBar();
+            return;
+        }
     }
 
     const openChiBtn = event.target.closest('[data-open-chi]');
@@ -2287,9 +2477,6 @@ async function handleActionBarClick(event) {
 
     const reactionBtn = event.target.closest('[data-reaction-type]');
     if (reactionBtn) {
-        const gameState = getGameState();
-        const pending = gameState?.pendingClaim || null;
-        const selfSeatId = session?.seatId === null || session?.seatId === undefined ? '' : String(session.seatId);
         if (pending && selfSeatId && !isSeatActivePendingDecision(pending, selfSeatId)) return;
 
         const type = reactionBtn.dataset.reactionType;
@@ -2601,6 +2788,7 @@ function cleanupBattleRuntime(options = {}) {
         clearTimeout(goldRevealFxTimer);
         goldRevealFxTimer = null;
     }
+    resetReactionBarStableGate();
 
     if (disposeGuard && typeof disposeScreenGuard === 'function') {
         try {
