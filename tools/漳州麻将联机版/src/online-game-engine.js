@@ -555,6 +555,66 @@ function chooseBotDiscardIndex(state, seatId) {
     return chooseStrategicDiscardIndex(hand, state.goldTile);
 }
 
+function predictBotDiscardTileAfterChi(state, seatId, discardTile, rawChoice) {
+    if (!state || typeof state !== 'object') return '';
+    const seatKey = String(seatId || '');
+    if (!seatKey) return '';
+
+    const hand = Array.isArray(state.hands?.[seatKey]) ? [...state.hands[seatKey]] : [];
+    if (!hand.length) return '';
+
+    const choice = toChoiceCodes(rawChoice, discardTile, state.goldTile) || [];
+    if (choice.length !== 2) return '';
+
+    const removedA = removeOneTileByLogicCode(hand, choice[0], state.goldTile);
+    const removedB = removeOneTileByLogicCode(hand, choice[1], state.goldTile);
+    if (!removedA || !removedB) return '';
+
+    const simulatedHands = {
+        ...(state.hands || {}),
+        [seatKey]: sortTiles(hand, state.goldTile)
+    };
+    const simulatedState = {
+        ...state,
+        hands: simulatedHands
+    };
+
+    let discardIndex = chooseBotDiscardIndex(simulatedState, seatKey);
+    if (discardIndex < 0 || discardIndex >= simulatedHands[seatKey].length) {
+        discardIndex = chooseDiscardIndex(simulatedHands[seatKey], state.goldTile);
+    }
+    if (discardIndex < 0 || discardIndex >= simulatedHands[seatKey].length) return '';
+
+    return simulatedHands[seatKey][discardIndex] || '';
+}
+
+function chooseBotChiDecision(option = {}, context = null) {
+    const chiOptions = Array.isArray(option.CHI) ? option.CHI : [];
+    if (!chiOptions.length) return null;
+
+    const state = context?.state || null;
+    const seatId = context?.seatId ?? '';
+    const pending = context?.pending || null;
+    const discardTile = pending?.kind === 'DISCARD_CLAIM' ? String(pending?.discard?.tile || '') : '';
+    if (!state || !discardTile || seatId === '') {
+        return { type: 'CHI', payload: { choice: chiOptions[0] }, byAction: false };
+    }
+
+    const claimedLogic = toLogicTileCode(discardTile, state.goldTile);
+    for (const choice of chiOptions) {
+        const predictedDiscard = predictBotDiscardTileAfterChi(state, seatId, discardTile, choice);
+        if (!predictedDiscard) {
+            return { type: 'CHI', payload: { choice }, byAction: false };
+        }
+        const predictedLogic = toLogicTileCode(predictedDiscard, state.goldTile);
+        if (predictedLogic !== claimedLogic) {
+            return { type: 'CHI', payload: { choice }, byAction: false };
+        }
+    }
+
+    return { type: 'PASS', payload: {}, byAction: false };
+}
+
 function getHuInfo({ hand, extraTile = null, isSelfDraw = false, winnerSeat = 0, dealerSeat = 0, roundCount = 0, goldTile = null, drawnTile = null, drawReason = 'NORMAL' }) {
     return evaluateHuInfo({
         hand,
@@ -1366,7 +1426,7 @@ function advanceToNextTurnAndDraw(state, discardSeatId, now) {
     }
 }
 
-function buildAutoClaimDecision(option = {}, pendingKind = 'DISCARD_CLAIM') {
+function buildAutoClaimDecision(option = {}, pendingKind = 'DISCARD_CLAIM', context = null) {
     if (pendingKind === 'QIANG_GANG') {
         if (option.HU) return { type: 'HU', payload: { huTypes: option.huTypes || [] }, byAction: false };
         return { type: 'PASS', payload: {}, byAction: false };
@@ -1374,9 +1434,7 @@ function buildAutoClaimDecision(option = {}, pendingKind = 'DISCARD_CLAIM') {
     if (option.HU) return { type: 'HU', payload: { huTypes: option.huTypes || [] }, byAction: false };
     if (option.GANG) return { type: 'GANG', payload: {}, byAction: false };
     if (option.PENG) return { type: 'PENG', payload: {}, byAction: false };
-    if (Array.isArray(option.CHI) && option.CHI.length) {
-        return { type: 'CHI', payload: { choice: option.CHI[0] }, byAction: false };
-    }
+    if (Array.isArray(option.CHI) && option.CHI.length) return chooseBotChiDecision(option, context) || { type: 'PASS', payload: {}, byAction: false };
     return { type: 'PASS', payload: {}, byAction: false };
 }
 
@@ -1391,7 +1449,11 @@ function autoDecideBotClaims(state) {
     if (control !== 'bot') return;
 
     const option = pending.optionsBySeat?.[activeSeatId] || {};
-    pending.decisions[activeSeatId] = buildAutoClaimDecision(option, pending.kind);
+    pending.decisions[activeSeatId] = buildAutoClaimDecision(option, pending.kind, {
+        state,
+        seatId: activeSeatId,
+        pending
+    });
 }
 
 function resolvePendingClaimIfReady(state, now, force = false) {
@@ -1413,7 +1475,11 @@ function resolvePendingClaimIfReady(state, now, force = false) {
             const control = state.seatControls?.[seatId] || 'human';
             if (control === 'bot') {
                 const option = pending.optionsBySeat?.[seatId] || {};
-                decision = buildAutoClaimDecision(option, pending.kind);
+                decision = buildAutoClaimDecision(option, pending.kind, {
+                    state,
+                    seatId,
+                    pending
+                });
                 pending.decisions[seatId] = decision;
             } else if (force) {
                 decision = { type: 'PASS', payload: {}, byAction: false };

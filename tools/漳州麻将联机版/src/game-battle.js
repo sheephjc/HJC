@@ -1008,7 +1008,14 @@ function renderTableOutcomeEffects() {
             loserArea.classList.add('lose-mark');
             const text = document.createElement('div');
             text.className = 'result-text lose-text';
-            text.textContent = '点炮 👎🏻';
+            const label = document.createElement('span');
+            label.className = 'lose-label';
+            label.textContent = '点炮';
+            const thumb = document.createElement('span');
+            thumb.className = 'lose-thumb';
+            thumb.textContent = '👎🏻';
+            text.appendChild(label);
+            text.appendChild(thumb);
             loserArea.appendChild(text);
             fitTextToSingleLine(text, { minPx: 12, widthRatio: 0.9, container: loserArea, clipOverflow: false });
         }
