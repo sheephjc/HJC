@@ -717,13 +717,21 @@ function getGameState() {
     return roomState?.game?.state || null;
 }
 
+function isTouchCompactViewport() {
+    if (window.matchMedia) {
+        return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+    }
+    return Number(navigator?.maxTouchPoints || 0) > 0;
+}
+
 function isMobileBattleViewport() {
+    if (!isTouchCompactViewport()) return false;
     if (window.matchMedia) {
         const isPortraitMobile = window.matchMedia('(max-width: 767px)').matches;
         const isLandscapeMobile = window.matchMedia('(max-width: 1024px) and (orientation: landscape)').matches;
         return isPortraitMobile || isLandscapeMobile;
     }
-    return Number(window.innerWidth || 0) <= 1024;
+    return Number(window.innerWidth || 0) <= 1024 && Number(navigator?.maxTouchPoints || 0) > 0;
 }
 
 function isDesktopViewport() {
@@ -1195,7 +1203,7 @@ function renderSeatArea(pos, seatId, gameState, canDiscard, delayReplacementDraw
                 canDiscard: pos === 'bottom' ? (canDiscard && !(delayReplacementDraw && index === drawHighlightIndex)) : false,
                 disabled: delayReplacementDraw && index === drawHighlightIndex,
                 selected: pos === 'bottom' && selectedDiscardIndex === index,
-                isGold: pos === 'bottom' && tile === gameState?.goldTile,
+                isGold: revealHand && tile === gameState?.goldTile,
                 newDraw: index === drawHighlightIndex && !delayReplacementDraw,
                 drawSeparated: shouldMoveDrawToTail && index === drawHighlightIndex,
                 winning: index === winningHighlightIndex
@@ -1238,7 +1246,9 @@ function renderBoard() {
 
     if (!gameState || !gameState.hands) {
         selectedDiscardIndex = null;
-        document.getElementById('p-bottom')?.classList.remove('ai-takeover');
+        PLAYER_POS.forEach((pos) => {
+            document.getElementById(`p-${pos}`)?.classList.remove('ai-takeover');
+        });
         setStatus('等待牌局初始化...');
         renderGoldDisplay('');
         PLAYER_POS.forEach((pos) => {
@@ -1289,6 +1299,8 @@ function renderBoard() {
         const seatObj = seats[String(seatId)] || null;
         const label = getCompactSeatLabel(seatId, seatObj);
         const delayReplacementDraw = delayedDrawSeat !== null && Number(seatId) === delayedDrawSeat;
+        const seatControl = gameState?.seatControls?.[String(seatId)] || seatObj?.control || 'human';
+        const seatTakeover = !!seatObj && !seatObj.isBot && seatObj?.trustee === true && seatControl === 'bot';
         renderSeatArea(pos, seatId, gameState, pos === 'bottom' ? canDiscard : false, delayReplacementDraw);
         setBoardScore(
             pos,
@@ -1297,9 +1309,8 @@ function renderBoard() {
             Number(gameState.dealerSeat) === Number(seatId),
             Number(gameState.dealerStreak || 0)
         );
+        document.getElementById(`p-${pos}`)?.classList.toggle('ai-takeover', seatTakeover);
     });
-
-    document.getElementById('p-bottom')?.classList.toggle('ai-takeover', control === 'bot');
 
     const turnSeat = Number.isInteger(gameState.turnSeat) ? gameState.turnSeat : -1;
     if (gameState.phase === 'playing' && turnSeat >= 0) {

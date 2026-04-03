@@ -603,8 +603,6 @@ export async function switchSeat(roomCodeInput, uid, nicknameInput, targetSeatId
     const targetSeatId = normalizeOptionalSeatId(targetSeatIdInput);
     const currentSeatId = normalizeOptionalSeatId(currentSeatIdInput);
 
-    if (targetSeatId === null) throw new Error('目标座位无效。');
-
     const user = runtimeOptions?.skipEnsureAuth === true
         ? { uid: sessionUid }
         : await ensureAnonymousAuth();
@@ -660,6 +658,40 @@ export async function switchSeat(roomCodeInput, uid, nicknameInput, targetSeatId
                 break;
             }
         }
+    }
+
+    if (targetSeatId === null) {
+        const releaseSeatIds = SEAT_IDS.filter((seatId) => {
+            const seat = seats?.[seatId];
+            return !!(seat && !seat.isBot && seat.reservedUid === sessionUid && seat.uid === sessionUid);
+        });
+        if (sourceSeatId !== null && !releaseSeatIds.includes(sourceSeatId)) {
+            releaseSeatIds.push(sourceSeatId);
+        }
+
+        try {
+            const patch = {};
+            appendPatchEntry(patch, `presence/${sessionUid}`, {
+                online: true,
+                nickname,
+                lastSeen: now
+            });
+            appendPatchEntry(patch, `memberUids/${sessionUid}`, true);
+            appendPatchEntry(patch, `spectatorUids/${sessionUid}`, true);
+            for (const seatId of releaseSeatIds) {
+                appendPatchEntry(patch, `seats/${seatId}`, buildBotSeat(seatId, now));
+            }
+            await update(roomRef, patch);
+        } catch (error) {
+            throw normalizeFirebaseDbError(
+                error,
+                '切换座位失败',
+                'switchSeat.standUp',
+                buildFirebaseContext(bindings, roomPath, roomCode)
+            );
+        }
+
+        return { seatId: null, spectator: true };
     }
 
     if (sourceSeatId !== null && sourceSeatId === targetSeatId) {

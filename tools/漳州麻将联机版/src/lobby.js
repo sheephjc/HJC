@@ -30,6 +30,7 @@ const lobbyFormCard = document.getElementById('lobby-form-card');
 const battleRoomPanel = document.getElementById('battle-room-panel');
 const battleRoomMetaEl = document.getElementById('battle-room-meta');
 const battleStartBtn = document.getElementById('battle-start-btn');
+const battleStandUpBtn = document.getElementById('battle-standup-btn');
 const battleCopyRoomBtn = document.getElementById('battle-copy-room-btn');
 const battleLeaveBtn = document.getElementById('battle-leave-btn');
 const battleSeatBoardEl = document.getElementById('battle-seat-board');
@@ -154,6 +155,11 @@ function findSelfSeatIdFromRoom(room, uid) {
     return null;
 }
 
+function getCurrentSeatId() {
+    if (!session) return null;
+    return session.seatId === null || session.seatId === undefined ? null : String(session.seatId);
+}
+
 function isHost() {
     return !!(roomState && session && roomState.meta?.hostUid === session.uid);
 }
@@ -182,6 +188,7 @@ function redirectToBattleGame() {
 function setBattleButtonsBusy(busy) {
     if (battleStartBtn) battleStartBtn.disabled = !!busy;
     if (battleLeaveBtn) battleLeaveBtn.disabled = !!busy;
+    if (battleStandUpBtn) battleStandUpBtn.disabled = !!busy;
 }
 
 function renderBattleRoomMeta() {
@@ -205,6 +212,21 @@ function syncBattleStartButtonState() {
     }
 
     battleStartBtn.disabled = false;
+}
+
+function syncBattleStandUpButtonState() {
+    if (!battleStandUpBtn) return;
+    if (!roomState || !session) {
+        battleStandUpBtn.style.display = 'none';
+        battleStandUpBtn.disabled = true;
+        return;
+    }
+
+    const waiting = (roomState?.meta?.status || 'waiting') === 'waiting';
+    const seated = getCurrentSeatId() !== null;
+    const visible = waiting && seated;
+    battleStandUpBtn.style.display = visible ? 'inline-block' : 'none';
+    battleStandUpBtn.disabled = !visible || seatSwitchBusy;
 }
 
 function buildOptimisticSeats(baseSeats = {}) {
@@ -255,7 +277,6 @@ function renderBattleSeatBoard() {
     const seats = buildOptimisticSeats(roomState?.seats || {});
     const hostUid = roomState?.meta?.hostUid || '';
     const waiting = (roomState?.meta?.status || 'waiting') === 'waiting';
-    const selfSeatId = session.seatId === null || session.seatId === undefined ? null : String(session.seatId);
 
     const cards = getBattleSeatOrder().map(({ seatId, pos }) => {
         const seat = seats?.[seatId] || null;
@@ -263,7 +284,7 @@ function renderBattleSeatBoard() {
         const isSelf = !!(isHuman && seat.reservedUid === session.uid);
         const isHostSeat = !!(isHuman && seat.uid === hostUid);
         const isAvailable = !isHuman;
-        const canChoose = waiting && (isAvailable || isSelf);
+        const canChoose = waiting && isAvailable;
         const occupiedByOthers = isHuman && !isSelf;
 
         const classes = ['battle-seat-card', `pos-${pos}`];
@@ -308,6 +329,7 @@ function renderBattleSeatBoard() {
 function renderWaitingRoom() {
     renderBattleRoomMeta();
     syncBattleStartButtonState();
+    syncBattleStandUpButtonState();
     renderBattleSeatBoard();
 }
 
@@ -346,6 +368,7 @@ async function cleanupWaitingRoom({ clearStored = false } = {}) {
     }
     setWaitingMode(false);
     setBattleButtonsBusy(false);
+    syncBattleStandUpButtonState();
 }
 
 async function reattachPresenceForSeat() {
@@ -365,7 +388,11 @@ async function subscribeWaitingRoom() {
 
         if (pendingSeatSwitch && session?.uid) {
             const confirmedSeatId = findSelfSeatIdFromRoom(roomState, session.uid);
-            if (confirmedSeatId && confirmedSeatId === pendingSeatSwitch.toSeatId) {
+            const targetSeatId = pendingSeatSwitch.toSeatId ?? null;
+            const switchedToTarget = targetSeatId === null
+                ? confirmedSeatId === null
+                : (confirmedSeatId === targetSeatId);
+            if (switchedToTarget) {
                 pendingSeatSwitch = null;
             }
         }
@@ -582,16 +609,52 @@ async function handleCopyBattleRoomCode() {
     }
 }
 
+async function handleStandUpClick() {
+    if (!session || !roomState || seatSwitchBusy) return;
+
+    const status = roomState?.meta?.status || 'waiting';
+    const currentSeatId = getCurrentSeatId();
+    if (status !== 'waiting' || currentSeatId === null) return;
+
+    seatSwitchBusy = true;
+    pendingSeatSwitch = {
+        fromSeatId: currentSeatId,
+        toSeatId: null
+    };
+    syncBattleStandUpButtonState();
+    renderBattleSeatBoard();
+    setStatus('站起中...');
+
+    try {
+        const result = await switchSeat(roomCode, session.uid, session.nickname, null, currentSeatId);
+        session = {
+            ...session,
+            seatId: result?.seatId ?? null,
+            entryMode: 'battle_waiting'
+        };
+        saveSession(session);
+        await rebindPresence(roomCode, session.uid, session.seatId, session.nickname);
+        setStatus('已站起，当前为观战状态。');
+    } catch (error) {
+        pendingSeatSwitch = null;
+        setStatus(error.message || '站起失败。', true);
+    } finally {
+        seatSwitchBusy = false;
+        renderWaitingRoom();
+    }
+}
+
 async function handleSeatBoardClick(event) {
-    const btn = event.target.closest('[data-seat-id]');
-    if (!btn || !session || !roomState || seatSwitchBusy) return;
+    if (!session || !roomState || seatSwitchBusy) return;
 
     const status = roomState?.meta?.status || 'waiting';
     if (status !== 'waiting') return;
 
-    const targetSeatId = String(btn.dataset.seatId || '');
-    const currentSeatId = session.seatId === null || session.seatId === undefined ? null : String(session.seatId);
+    const btn = event.target.closest('[data-seat-id]');
+    if (!btn) return;
 
+    const targetSeatId = String(btn.dataset.seatId || '');
+    const currentSeatId = getCurrentSeatId();
     if (!targetSeatId || targetSeatId === currentSeatId) return;
 
     const seat = roomState?.seats?.[targetSeatId] || null;
@@ -605,6 +668,7 @@ async function handleSeatBoardClick(event) {
         fromSeatId: currentSeatId,
         toSeatId: targetSeatId
     };
+    syncBattleStandUpButtonState();
     renderBattleSeatBoard();
     setStatus(`切换到${seatNameAbsolute(targetSeatId)}位中...`);
 
@@ -626,7 +690,6 @@ async function handleSeatBoardClick(event) {
         renderWaitingRoom();
     }
 }
-
 function bindEvents() {
     createRoomBtn?.addEventListener('click', handleCreateRoomBattle);
     joinRoomBtn?.addEventListener('click', handleJoinRoomBattle);
@@ -634,6 +697,7 @@ function bindEvents() {
     joinRoomDebugBtn?.addEventListener('click', handleJoinRoomDebug);
 
     battleStartBtn?.addEventListener('click', handleStartBattleGame);
+    battleStandUpBtn?.addEventListener('click', handleStandUpClick);
     battleCopyRoomBtn?.addEventListener('click', handleCopyBattleRoomCode);
     battleLeaveBtn?.addEventListener('click', handleLeaveBattleRoom);
     battleSeatBoardEl?.addEventListener('click', handleSeatBoardClick);
